@@ -1,0 +1,101 @@
+{
+  "workflow": {
+    "options": {
+      "src": {"help": "Source file"},
+      "dst": {"help": "Destination file"},
+      "dir": {"help": "Project directory, default '.'", "default": "."},
+      "whisperdir": {"help": "Directory where Whisper is found (if not in path)"},
+      "tmpdir": {"help": "Temporary directory", "default": "/tmp/"},
+      "lang": {"help": "Language ('no' or 'en' for now)", "default": ""},
+      "max_chars_pr_line": {"help": "Max chars pr line, default 40", "default": 40},
+      "max_time_pr_sub": {"help": "Max content time covered pr subtitle, default 7.0 secs", "default": 7.0},
+      "model": {"help": "Which model to use", "default": "/home/njaal-local/scream_non_large_3e60_beams5_v2.bin"}
+    },
+    "name": "NORCE_Transcribe_Whisper",
+    "description": "Transcribe from Norwegian sound to Norwegian fancy subs",
+    "nodes": [
+      {
+        "module": "cmdline",
+        "name": "start",
+        "args": {
+        },
+        "downstreamOf": ["entry"]
+      },
+      {
+        "module": "mod_prep",
+        "name": "prepare",
+        "downstreamOf": ["start"],
+        "workdir": {"option": "dir"},
+        "args": {
+          "src": {"option": "src"},
+          "dst": {"option": "dst"},
+          "dir": {"option": "tmpdir", "ftype": "tempdir", "id": "cammalk123"}
+        }
+      },
+      {
+        "module": "ffmpeg",
+        "name": "extract_audio",
+        "downstreamOf": ["prepare"],
+        "args": {
+          "src": {"option": "src"},
+          "dst": {"output": "parent.wavfile"},
+          "audio_hz": 16000
+        }, "cache": {
+          "args": ["src", "dst"],
+          "files": ["dst"]
+        }
+      },
+      {
+        "module": "mod_whisper",
+        "name": "transcribe",
+        "gpu": true,
+        "docker": "whisper",
+        "max_parallel": 1,
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["extract_audio"],
+        "volumes": [["/tmp/cache", "/cc/whisper/.cache", "rw"]],
+        "args": {
+          "use_api": false,
+          "src": {"option": "src"},
+          "lang": {"option": "lang"},
+          "model": {"option": "model"},
+          "dir": {"option": "tmpdir", "ftype": "tempdir", "id": "o8uojkaj123"}
+        }
+      },
+      {
+        "module": "copyfiles",
+        "name": "copy",
+        "type": "admin",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["transcribe"],
+        "args": {
+          "src": {"output": "parent.dst"},
+          "dst": {"option": "dst"}
+        }
+      },
+      {
+        "module": "copyfiles",
+        "name": "copy_json",
+        "type": "admin",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["transcribe"],
+        "args": {
+          "src": {"output": "parent.dst_words"},
+          "dst": {"option": "dst"}
+        }
+      },
+      {
+        "module": "mod_reformat2",
+        "name": "reformat",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["transcribe"],
+        "args": {
+          "src": {"output": "parent.dst_words"},
+          "dst": {"option": "dst"},
+          "max_chars_per_line": {"option": "max_chars_pr_line"},
+          "max_time_pr_sub": {"option": "max_time_pr_sub"}
+        }
+      }
+    ]
+  }
+}

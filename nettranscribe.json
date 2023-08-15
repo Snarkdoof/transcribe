@@ -1,0 +1,112 @@
+{
+  "workflow": {
+    "options": {
+      "port": {"help": "Port for server"},
+      "dir": {"help": "Project directory, default '.'", "default": "."},
+      "tmpdir": {"help": "Temporary directory", "default": "/tmp/"},
+      "archivedir": {"help": "Destination directory for archived copies"}
+    },
+    "name": "Cryonite.NetTranscriber",
+    "description": "Transcribe and format texts for media files",
+    "config": "Cryonite.NetTranscriber",
+    "nodes": [
+      {
+        "module": "netwatcher",
+        "name": "start",
+        "args": {
+          "schema": "nettranscribe.schema",
+          "port": {"config": "port", "default": 9996}
+        },
+        "outputs": {
+          "url": "Content URL",
+          "callbackurl": "callbackurl",
+          "contentid": "ID of content",
+          "lang": "Language",
+          "reprocess": "Force reprocessing",
+          "model": "Model to use"
+        },
+        "downstreamOf": ["entry"]
+      },
+      {
+        "module": "mod_gcloud",
+        "name": "CheckServers",
+        "ccnode": "cc-root",
+        "maxParallel": 1,
+        "type": "admin",
+        "downstreamOf": ["start"],
+        "workdir": {"option": "dir"},
+        "args": {
+          "start": ["instance-1"]
+        }
+      },
+      {
+        "module": "mod_prep_net",
+        "name": "prepare",
+        "downstreamOf": ["start"],
+        "workdir": {"option": "dir"},
+        "args": {
+          "model": {"output": "start.model"},
+          "src": {"output": "start.url"},
+          "contentid": {"output": "start.contentid"},
+          "dst": {"option": "archivedir"},
+          "tmpdir": {"option": "tmpdir", "type": "tempdir", "id": "jjp1oi123"}
+        }
+      },
+      {
+        "module": "ffmpeg",
+        "name": "extract_audio",
+        "downstreamOf": ["prepare"],
+        "args": {
+          "src": {"output": "parent.src"},
+          "dst": {"output": "parent.wavfile"},
+          "audio_hz": 16000
+        }
+      },
+      {
+        "module": "mod_whisper",
+        "name": "transcribe",
+        "gpu": true,
+        "docker": "whisper",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["extract_audio"],
+        "volumes": [["/tmp/cache", "/cc/whisper/.cache", "rw"]],
+        "args": {
+          "use_api": false,
+          "src": {"output": "parent.dst"},
+          "lang": {"output": "start.lang"},
+          "model": {"output": "prepare.model"},
+          "dir": {"output": "prepare.dst"},
+          "reprocess": {"output": "start.reprocess"}
+        }
+      },
+      {
+        "module": "mod_reformat2",
+        "name": "reformat",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["transcribe"],
+        "args": {
+          "src": {"output": "parent.dst_words"},
+          "dst": {"output": "prepare.dst"},
+          "max_chars_per_line": 45
+        }
+      },
+      {
+        "module": "mod_callback",
+        "name": "callback",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["reformat"],
+        "args": {
+          "callbackurl": {"output": "start.callbackurl"},
+          "weburl": {"config": "weburl"},
+          "webroot": {"config": "webroot"},
+          "contentid": {"output": "start.contentid"},
+          "formatted": {"output": "parent.dst"},
+          "vtt": {"output": "transcribe.dst"},
+          "text": {"output": "transcribe.dst_txt"},
+          "json": {"output": "transcribe.dst_words"},
+          "model": {"config": "model", "default": "large-v2"}
+        }
+      }
+    ]
+  }
+}
