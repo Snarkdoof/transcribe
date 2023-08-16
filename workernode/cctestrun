@@ -1,0 +1,6 @@
+#!/bin/sh
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:24
+export CC_DIR=/home/cryocore/git/cryocloud
+export PYTHONPATH=/home/cryocore/git/cryocore/dockercc:$CC_DIR:.:$PYTHONPATH:/cc/w2vtranscriber
+
+cctestrun $@

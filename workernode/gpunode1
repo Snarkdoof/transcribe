@@ -1,0 +1,9 @@
+#!/bin/sh
+export CUDA_VISIBLE_DEVICES="device=0"
+export NVIDIA_VISIBLE_DEVICES="device=0"
+export HOME=/scratch
+export CC_DIR=/home/cryocore/git/cryocloud
+export PATH=/home/cryocore/git/cryocloud/bin:$PATH
+export PYTHONPATH=/home/cryocore/git/cryocore:/home/cryocore/git/cryocloud:.
+ccnode --gpu 2 --name gpu0 -n 0 $@
+

@@ -1,0 +1,12 @@
+transformers
+pyannote.audio
+ftfy
+deepspeed
+accelerate
+diffusers
+fuzzywuzzy[speedup]
+ffmpeg-python
+Cython
+nemo_toolkit[all]
+openai
+dtw-python
