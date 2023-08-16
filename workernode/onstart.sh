@@ -11,12 +11,12 @@ sudo chown -R cryocore /tmp
 rsync -r /data/models /scratch/ --size-only
 sudo chown cryocore -R /scratch/
 
-screen -L -Logfile /home/cryocore/stopifidle.term -d -m -S stopifidle /data/stop
-ifidle
-
-cd git/cryonite/microservices/transcribe
+cd /home/cryocore/git/transcribe
 sudo -u cryocore git pull
+
+screen -L -Logfile /home/cryocore/git/transcribe/workernode/stopifidle.term -d -m -S stopifidle /home/cryocore/git/transcribe/workernode/stopifidle
+
 echo "Starting nodes"
 
-sudo -u cryocore /home/cryocore/start_workers.sh
+sudo -u cryocore /home/cryocore/git/transcribe/workernode/start_workers.sh
 echo "Startup OK"
