@@ -1,6 +1,10 @@
 #!/bin/bash
 
-sudo mkfs.ext2 /dev/nvme0n1 
+if blkid /dev/nvme0n1 | grep ext2; then
+  echo "Filesystem already exists, gambling that it's fine"
+else
+  sudo mkfs.ext2 /dev/nvme0n1 
+fi
 sudo mount /dev/nvme0n1 /scratch
 sudo mount /data
 mkdir /tmp/cache
