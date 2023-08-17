@@ -70,3 +70,27 @@ docker run --rm  --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi
 ```
 runs without errors as the cryocore user, you are good!
 
+### Automatic shutdown
+Ensure that your user can run "sudo halt -p" with no password prompt. This can be done by running:
+```
+visudo
+
+# Then add this bit at the end
+cryocore ALL=(ALL) NOPASSWD: /sbin/halt -p
+
+```
+
+We then need to start stuff on boot
+```
+sudo crontab -e
+
+# Add this line
+@reboot /home/cryocore/git/transcribe/workernode/onstart.sh
+
+```
+
+### Dependencies
+
+We also need ffmpeg to run, install as you wish.
+
+
