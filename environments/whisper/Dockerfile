@@ -37,7 +37,7 @@ ENV NUMBA_CACHE_DIR=/tmp/ \
 
 # Set username
 RUN adduser --disabled-password --uid $uid $username
-#RUN chown -R $username /opt/conda
+RUN chown -R $username /cc
 USER $username
 
 ENV PATH="/cc/whisper/.local/bin:${PATH}"
@@ -46,12 +46,11 @@ RUN pip3 install -r requirements.txt
 
 RUN pip3 install git+https://github.com/linto-ai/whisper-timestamped
 
-# Minor hack as this thing is bad
-RUN chmod 755 /opt/conda/lib/python3.8/site-packages/triton-2.0.0-py3.8-linux-x86_64.egg/triton/third_party/cuda/bin/ptxas
-
+# Add docker version of CryoCloud
 RUN cd /tmp; git clone https://github.com/Snarkdoof/cryocore.git; cp -r cryocore/dockercc /cc/cryocore
 
+# Add CryoCloud
 RUN cd /cc; git clone https://github.com/Snarkdoof/cryocloud.git; cd cryocloud; git checkout develop
 
-# Build: sudo docker build --build-arg username=$USER -t test01 .
-# Run: sudo docker run --rm test01 id
+# Build: sudo docker build --build-arg username=$USER --build-arg uid=$UID -t whisper .
+# Run: sudo docker run --gpus all --rm --it whisper
