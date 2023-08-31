@@ -2,7 +2,7 @@
 
 ## Root node
 First install [CryoCore](https://github.com/Snarkdoof/cryocore)
-and [CryoCloud](https://github.com/Snarkdoof/cryocloud)
+and [CryoCloud](https://github.com/Snarkdoof/cryocloud) (Might need develop branch)
 
 Install nginx with ssl sertificates (certbot is good)
 
