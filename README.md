@@ -1,7 +1,8 @@
 # Installing Transcode
 
 ## Root node
-First install CryoCore and CryoCloud (https://github.com/Snarkdoof/cryocore)
+First install [CryoCore](https://github.com/Snarkdoof/cryocore)
+and [CryoCloud](https://github.com/Snarkdoof/cryocloud)
 
 Install nginx with ssl sertificates (certbot is good)
 
@@ -21,8 +22,6 @@ ccconfig add Cryonite.NetTranscriber.weburl https://<yourdomain>/transcribe/
 
 Model can also be a local file, as long as whisper-timestamped can use it.
 
-
-## Worker node
 In order to use automatic starting, ensure that this command succeeds from the
 root node, and ensure that the name of the node is correct in
 nettranscribe.json (it must be on the machine that can run gcloud, default is *ccroot*), and that the instance name of your processing machine is set (default is *instance-1*).
@@ -59,8 +58,18 @@ Edit ~/.cryoconfig and make it look something like this, using the IP on your ro
 Set up shared filesystem:
 Make the mount point /data and set cryocore as owner.
 
-Add to your fstab somethig like
+Export it via nfs (install nfs server first), ensure that the IP range is good for you.
 ```
+# In /etc/exports
+/data 10.186.0.0/16(rw,sync,no_subtree_check)
+
+```
+
+## Worker node
+
+Mount the shared data drive, by adding somethig like this to your fstab:
+```
+# In /etc/fstab
 <ipofrootnode>:/data /data nfs defaults 0 0
 ```
 
