@@ -1,4 +1,4 @@
-# Installing Transcode
+# Installing Transcribe
 
 ## Root node
 First install CryoCore and CryoCloud (https://github.com/Snarkdoof/cryocore)
@@ -14,12 +14,19 @@ Create your web directory (set it up properly too, the default is /var/www/html)
 
 Set config for the transcode:
 ```
+
+# Default model, webroot is place on the worker node's disk to place the
+# result, weburl is the root of that directory on the web
+
 ccconfig add Cryonite.NetTranscriber.model large-v2
 ccconfig add Cryonite.NetTranscriber.webroot /var/www/html/transcribe
 ccconfig add Cryonite.NetTranscriber.weburl https://<yourdomain>/transcribe/
 ```
 
 Model can also be a local file, as long as whisper-timestamped can use it.
+
+When all is done, start with "start_nettranscribe.sh" after checking that it
+has the correct paths.
 
 
 ## Worker node
@@ -93,4 +100,8 @@ sudo crontab -e
 
 We also need ffmpeg to run, install as you wish.
 
+
+# Alternative processing chains
+
+The "whisper.json" workflow contains a more advanced processing, generating "FancySubs" after identifying users and dynamic aspect ratio based on mediapipes.
 
