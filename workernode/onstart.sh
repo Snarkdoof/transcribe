@@ -21,9 +21,10 @@ cd $CODE_DIR
 echo "Updating code base"
 sudo -u cryocore git pull
 
-screen -L -Logfile $CODE_DIR/workernode/stopifidle.term -d -m -S stopifidle $CODE_DIR/workernode/stopifidle
+LOGFILE=/home/cryocore/git/transcribe/workernode/stopifidle.term
+echo "" > $LOGFILE
+screen -L -Logfile $LOGFILE -d -m -S stopifidle $CODE_DIR/workernode/stopifidle
 
 echo "Starting nodes"
-
 sudo -u cryocore $CODE_DIR/workernode/start_workers.sh
 echo "Startup OK"
