@@ -18,6 +18,11 @@ fi
 # Enter the directory
 cd "$target" || exit
 
+# Check if "prepare.sh" exists in the directory and run it
+if [ -f "prepare.sh" ]; then
+    ./prepare.sh
+fi
+
 # Run docker build
 docker build --build-arg username=$USER --build-arg uid=$UID -t $target .
 
