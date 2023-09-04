@@ -1,0 +1,206 @@
+{
+  "workflow": {
+    "options": {
+      "src": {"help": "Source file"},
+      "dst": {"help": "Destination file"},
+      "dir": {"help": "Project directory, default '.'", "default": "."},
+      "whisperdir": {"help": "Directory where Whisper is found (if not in path)"},
+      "tmpdir": {"help": "Temporary directory", "default": "/tmp/"},
+      "baseurl": {"help": "Base URL on the server for the resources", "default": "/sfi/res/radio/"},
+      "lang": {"help": "Language ('no' or 'en' for now)", "default": ""},
+      "intro_len": {"help": "Length of the intro (skip voice identification)"},
+      "people": {"help": "File with people definition (still shady)", "default": ""},
+      "baseurl": {"help": "Base URL on the server for the resources", "default": "/sfi/res/radio/"},
+      "webroot": {"help": "What part of the destination should be removed for the base url"},
+      "art": {"help": "URL to image with art for this resource", "default": null},
+      "guess_people": {"help": "Try to detect people even if they are given", "default": false},
+      "realign": {"help": "Realign (resync) subtitles to sound", "type": "bool", "default": false},
+      "summarize": {"help": "Use AI to summarize chapters", "type": "bool", "default": false}
+    },
+    "name": "NORCE_Transcribe_Whisper",
+    "description": "Transcribe from Norwegian sound to Norwegian fancy subs",
+    "nodes": [
+      {
+        "module": "cmdline",
+        "name": "start",
+        "args": {
+        },
+        "downstreamOf": ["entry"]
+      },
+      {
+        "module": "mod_dar",
+        "name": "DAR",
+        "docker": "mediapipe",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["prepare"],
+        "args": {
+          "src": {"option": "src"},
+          "dst": {"output": "prepare.auxfile"}
+        }
+      },
+      {
+        "module": "mod_prep",
+        "name": "prepare",
+        "downstreamOf": ["start"],
+        "workdir": {"option": "dir"},
+        "args": {
+          "src": {"option": "src"},
+          "dst": {"option": "dst"},
+          "dir": {"option": "tmpdir", "ftype": "tempdir", "id": "cammalk123"}
+        }
+      },
+      {
+        "module": "ffmpeg",
+        "name": "extract_audio",
+        "downstreamOf": ["prepare"],
+        "args": {
+          "src": {"output": "prepare.src"},
+          "dst": {"output": "prepare.wavfile"}
+        }, "cache": {
+          "args": ["src", "dst"],
+          "files": ["dst"]
+        }
+      },
+      {
+        "module": "ffmpeg",
+        "name": "extract_audio_mono",
+        "downstreamOf": ["prepare"],
+        "args": {
+          "src": {"output": "prepare.src"},
+          "dst": {"output": "prepare.wavfilemono"},
+          "audio_hz": 16000,
+          "mono": true
+        }, "cache": {
+          "args": ["src", "dst"],
+          "files": ["dst"]
+        }
+      },
+      {
+        "module": "ffmpeg",
+        "name": "audio_encode",
+        "downstreamOf": ["prepare"],
+        "args": {
+          "src": {"output": "prepare.src"},
+          "dst": {"output": "prepare.mp3file"}
+        }
+      },
+      {
+        "module": "mod_detect_voice",
+        "name": "detect_voice",
+        "max_parallel": 1,
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["extract_audio_mono"],
+        "args": {
+          "src": {"output": "parent.dst"},
+          "format": "csv",
+          "max_segment_length": 8,
+          "max_pause": 0.2,
+          "agressive": 3
+        }, "cache": {
+          "args": ["src"],
+          "files": ["dst"]
+        }
+      },
+      {
+        "module": "mod_whisper",
+        "name": "transcribe",
+        "gpu": true,
+        "docker": "whisper",
+        "max_parallel": 1,
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["detect_voice"],
+        "volumes": [["/home/njaal-local/cache", "/cc/whisper/.cache", "rw"]],
+        "args": {
+          "src": {"output": "extract_audio_mono.dst"},
+          "lang": {"option": "lang"},
+          "model": "large-v2",
+          "dir": {"option": "tmpdir", "ftype": "tempdir", "id": "cammalk123"}
+        }, "cache": {
+          "args": ["src", "lang", "model"],
+          "files": ["dst"]
+        }
+      },
+      {
+        "module": "mod_reformat2",
+        "name": "reformat",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["transcribe"],
+        "args": {
+          "src": {"output": "parent.dst_words"},
+          "dst": {"output": "parent.dst"},
+          "max_chars_per_line": 45
+        }, "cache": {
+          "args": ["src"],
+          "files": ["dst"]
+        }
+      },
+      {
+        "module": "mod_speaker_identification2",
+        "name": "identify",
+        "gpu": true,
+        "docker": "whisper",
+        "volumes": [["/tmp/cache", "/cc/whisper/.cache", "rw"]],
+        "max_parallel": 1,
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["reformat"],
+        "args": {
+          "src": {"output": "extract_audio_mono.dst"},
+          "segments": {"output": "detect_voice.dst"},
+          "vtt": {"output": "parent.dst"},
+          "people": {"option": "people"},
+          "dst": {"output": "prepare.subfile"},
+          "guess_people": {"option": "guess_people"},
+          "realign": {"option": "realign"}
+        }
+      },
+      {
+        "module": "mod_cards",
+        "name": "cardmaker",
+        "runOn": "never",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["identify"],
+        "args": {
+          "src": {"output": "prepare.subfile"},
+          "dst": {"output": "prepare.infofile"}
+        }
+      },
+      {
+        "module": "mod_chapters",
+        "name": "chapters",
+        "docker": "whisper",
+        "workdir": {"option": "dir"},
+        "volumes": [["/tmp/cache", "/cc/whisper/.cache", "rw"]],
+        "downstreamOf": ["identify"],
+        "config": "NORCE_Transcribe_Whisper",
+        "args": {
+          "src": {"output": "prepare.subfile"},
+          "lang": {"option": "lang"},
+          "summarize": {"option": "summarize"},
+          "openai_api_key": {"config": "openai_api_key"}
+        }
+      },
+      {
+        "module": "mod_publish2",
+        "name": "publish",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["chapters", "DAR"],
+        "args": {
+          "subtitles": {"output": "prepare.subfile"},
+          "cast": {"output": "identify.cast"},
+          "media": {"output": "prepare.mp3file"},
+          "webroot": {"option": "webroot"},
+          "baseurl": {"option": "baseurl"},
+          "chapters": {"output": "chapters.dst"},
+          "freshness": {"output": "chapters.freshness"},
+          "manifest": {"output": "prepare.manifest"},
+          "auxfile": {"output": "prepare.auxfile"},
+	  "videofile": {"output": "prepare.videofile"},
+          "dst": {"option": "dst"},
+          "art": {"option": "art"},
+          "update_palette": true,
+           "rsync": "-u -r /data/whisper/ rsyncuser@seer2.itek.norut.no:/var/www/html/whisper/"
+        }
+      }
+    ]
+  }
+}
