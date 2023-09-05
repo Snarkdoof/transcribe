@@ -4,43 +4,42 @@ import subprocess
 import time
 import datetime
 
-# Define the idle threshold in seconds (15 minutes = 900 seconds)
-idle_threshold = 900
+# Define the idle threshold in seconds (5 minutes = 300 seconds)
+idle_threshold = 300
 
 # Initialize the last non-zero time as the current time
 last_nonzero_time = datetime.datetime.now()
 
 while True:
-    # Execute the "ccisidle" command using subprocess
-    env = {"PYTHONPATH" :"/home/cryocore/git/cryocore", "CC_DIR": "/home/cryocore/git/cryocloud"}
-    exit_code = subprocess.call("/home/cryocore/git/cryocloud/bin/ccisidle", shell=True, env=env)
+    try:
+        # Execute the "ccisidle" command using subprocess
+        env = {"PYTHONPATH": "/home/cryocore/git/cryocore", "CC_DIR": "/home/cryocore/git/cryocloud"}
+        exit_code = subprocess.call("/home/cryocore/git/cryocloud/bin/ccisidle", shell=True, env=env)
 
-    if exit_code != 0:
-        # If the exit code is 0, it means the command was successful
-        print("ccisidle returned 0 - Machine is not idle.")
-        last_nonzero_time = datetime.datetime.now()
-    else:
-        # If the exit code is non-zero, the command indicated idle status
-        print("ccisidle returned non-zero - Machine is idle.")
-        current_time = datetime.datetime.now()
-        idle_time = current_time - last_nonzero_time
+        if exit_code != 0:
+            # If the exit code is 0, it means the command was successful
+            print("ccisidle returned 0 - Machine is not idle.")
+            last_nonzero_time = datetime.datetime.now()
+        else:
+            # If the exit code is non-zero, the command indicated idle status
+            print("ccisidle returned non-zero - Machine is idle.")
+            current_time = datetime.datetime.now()
+            idle_time = current_time - last_nonzero_time
 
-        if idle_time.total_seconds() >= idle_threshold:
+            if idle_time.total_seconds() >= idle_threshold:
 
-            # Sanity check
-            command = ["pgrep", "-f", "whisper"]
-            result = subprocess.run(command, stdout=subprocess.DEVNULL)
+                # Sanity check
+                command = ["pgrep", "-f", "whisper"]
+                result = subprocess.run(command, stdout=subprocess.DEVNULL)
 
-            if result.returncode == 0:
-                   print("The 'whisper' process is running.")
-            else:
-                # If the machine has been idle for at least 15 minutes, execute "reboot"
-                print("Machine has been idle for at least 15 minutes. Initiating reboot.")
-                subprocess.call("sudo halt -p", shell=True)
+                if result.returncode == 0:
+                    print("The 'whisper' process is running.")
+                else:
+                    # If the machine has been idle for at least 15 minutes, execute "reboot"
+                    print("Machine has been idle for at least 15 minutes. Initiating reboot.")
+                    subprocess.call("sudo halt -p", shell=True)
 
-            break
-
-
-    # Sleep for 1 minute before checking again
-    time.sleep(60)
-
+                break
+    finally:
+        # Sleep for 1 minute before checking again
+        time.sleep(60)

@@ -10,3 +10,4 @@ Cython
 nemo_toolkit[all]
 openai
 dtw-python
+onnxruntime
