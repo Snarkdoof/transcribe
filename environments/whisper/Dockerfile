@@ -30,11 +30,10 @@ ENV NUMBA_CACHE_DIR=/tmp/ \
     CC_DIR="/cc/cryocloud/" \
     PYTHONPATH="${PYTHONPATH}:/cc/cryocore:/cc/cryocloud:." \
     PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:24 \
-    TRANSFORMERS_CACHE=/cache/huggingface/hub \
+    TRANSFORMERS_CACHE=/cc/whisper/.cache/huggingface/hub \
     MPLCONFIGDIR=/cc/whisper/.cache/matplotlib \
     HF_HOME=/cc/whisper \
     HOME=/cc/whisper
-
 # Set username
 RUN adduser --disabled-password --uid $uid $username
 RUN chown -R $username /cc
