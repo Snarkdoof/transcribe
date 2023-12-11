@@ -142,8 +142,8 @@ def run_whisper_pipeline(cc, src, dst_dir, model, lang, stop_event,
     cc.log.debug("Transcribing")
     res = pipe(src, generate_kwargs=kwargs, 
                chunk_length_s=28,
-               stride_length_s=[6, 2],
-               batch_size=10)
+               stride_length_s=2,
+               batch_size=6)
     cc.log.debug("Transcribe done")
     segments = create_segments(res["chunks"])
 
