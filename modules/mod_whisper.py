@@ -11,7 +11,8 @@ try:
     # import whisper_timestamped as whisper
     # import whisper
     CANRUN = True
-except:
+
+except Exception:
     print("Can't run whisper in this environment")
     CANRUN = False
 
@@ -24,6 +25,8 @@ ccmodule = {
         "src": "Source file to transcribe",
         "model": "tiny.en, tiny, base.en, base, small.en, small medium.en, medium, large. Default large",
         "task": "transcribe or translate (to english)",
+        "use_pipeline": "Use transformer pipelines (very fast!), default True",
+        "device": "Device, e.g. cuda:0 or cpu, default cuda:0",
         "lang": "Language, default autodetect",
         "dir": "Directory to place files",
         "reprocess": "Force reprocessing, default False", 
@@ -54,11 +57,115 @@ class Model:
 
     @staticmethod
     def get(model, device):
+
         import whisper_timestamped as whisper
         if not Model.instance or Model.loaded_model != model:
             Model.instance = whisper.load_model(model, device=device)
             Model.loaded_model = model
         return Model.instance
+
+
+class Pipeline:
+    instance = None
+    loaded_model = None
+
+    @staticmethod
+    def get(model, device):
+        from transformers import pipeline
+        import torch
+
+        if not Pipeline.instance or Pipeline.loaded_model != model:
+            Pipeline.instance = pipeline(task="automatic-speech-recognition",
+                                         torch_dtype=torch.float16,
+                                         model=model,
+                                         device=device,
+                                         return_timestamps="word")
+            Pipeline.loaded_model = model
+        return Pipeline.instance
+
+
+def run_whisper_pipeline(cc, src, dst_dir, model, lang, stop_event,
+                         reprocess=False, device="cuda:0"):
+
+    def create_segments(chunks):
+        """
+        We get chunks with [{"text", "timestamp": (start, end)}].
+        We convert it to a list of {"text", "start", "end", "words":{text, start, end}}.
+        We just get one segment (I think), so split if the timestamps are not continuous.
+        """
+
+        segments = []
+        segment = {}
+        words = []
+        for chunk in chunks:
+            start, end = chunk["timestamp"]
+            word = {"start": start,
+                    "end": end,
+                    "text": chunk["text"],
+                    "word": chunk["text"]}
+            if len(words) == 0:
+
+                words.append(word)
+                segment["start"] = chunk["timestamp"][0]
+                continue
+            # Is continous?
+            if start == words[-1]["end"]:
+                words.append(word)
+                continue
+
+            # new segment
+            segment["end"] = words[-1]["end"]
+            segment["text"] = "".join([w["word"] for w in words])
+            segment["words"] = words
+            if len(segment["text"].strip()) > 0:
+                segments.append(copy.copy(segment))
+            segment = {"start": start}
+            words = [word]
+
+        # Add the last one too
+        segment["end"] = end
+        segment["text"] = "".join([w["word"] for w in words])
+        segment["words"] = words
+        if len(segment["text"].strip()) > 0:
+            segments.append(segment)
+        return segments
+
+    cc.log.debug(f"Loading model {model}")
+    pipe = Pipeline.get(model, device)
+
+    if stop_event.isSet():
+        return 0, {"error": "Terminated"}
+
+    kwargs = {'task': 'transcribe',
+              'language': lang,
+              'num_beams': 3}
+    cc.log.debug("Transcribing")
+    res = pipe(src, generate_kwargs=kwargs, 
+               chunk_length_s=28,
+               stride_length_s=[6, 2],
+               batch_size=10)
+    cc.log.debug("Transcribe done")
+    segments = create_segments(res["chunks"])
+
+    name = os.path.basename(src)
+    retval = {
+        "dst": os.path.join(dst_dir, name) + ".vtt",
+        "dst_txt": os.path.join(dst_dir, name) + ".txt",
+        "dst_words": os.path.join(dst_dir, name) + ".words.json"
+    }
+    # Store stuff
+    with open(retval["dst_words"], "w") as f:
+        json.dump(segments, f, indent=" ")
+
+    with open(retval["dst_txt"], "w") as f:
+        for segment in segments:
+            f.write(segment["text"] + "\n")
+
+    with open(retval["dst"], "w") as f:
+        import whisper.utils
+        writer = whisper.utils.WriteVTT(dst_dir)
+        writer.write_result({"segments": segments}, f)
+    return 100, retval
 
 
 def run_whisper(cc, src, dst_dir, model, lang, stop_event, reprocess=False):
@@ -131,6 +238,7 @@ def run_whisper(cc, src, dst_dir, model, lang, stop_event, reprocess=False):
         raise Exception("Terminated")
 
     raise Exception("Whisper failed")
+
 
 def load_segment_file(filename, max_break=0.4, min_segment_length=0.6):
 
@@ -205,7 +313,8 @@ def process_task(cc, task, stop_event):
     print("MOD_WHISPER", task)
 
     args = task["args"]
-
+    use_pipeline = task.get("use_pipeline", True)
+    device = task.get("device", "cuda:0")
     model = args.get("model", "large-v2")
     model_dir = args.get("model_dir", "/scratch/models/")
     if os.path.exists(os.path.join(model_dir, model)):
@@ -240,18 +349,19 @@ def process_task(cc, task, stop_event):
         cc.log.warning("Cache failed to catch this one")
         return 100, retval
 
-
     # Run from commandline or via API
-    if not use_api:
+    if not use_api or use_pipeline:
         try:
-            return run_whisper(cc, src, dst_dir, model, lang, stop_event, reprocess)
-        except:
+            return run_whisper_pipeline(cc, src, dst_dir, model, lang,
+                                        stop_event, reprocess, device)
+        except Exception:
             # Try once more after a bit - we seem to get an issue once in a while where a 
             # directory exists while being created - possible sync issue?
             import random
             import time
             time.sleep(random.random() * 10)
-            return run_whisper(cc, src, dst_dir, model, lang, stop_event, reprocess)
+            return run_whisper_pipeline(cc, src, dst_dir, model, lang,
+                                        stop_event, reprocess, device)
 
     # We're using the API, that means we run whisper_timestamped for now
     import whisper_timestamped as whisper

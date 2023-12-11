@@ -281,7 +281,9 @@ def split_segments(segments, max_chars, max_cps=20.0, max_time=7.0):
             print("fulltext\n", fulltext)
             print("words\n", " ".join([w["text"] for w in segment["words"]]))
             print("Resync\n", " ".join([w["text"] for w in resynced]))
-            raise Exception("Bad resync, {} words, expected {}".format(len(resynced), len(segment["words"])))
+            print("BAD RESYNC, using original")
+            resynced = segment["words"]
+            # raise Exception("Bad resync, {} words, expected {}".format(len(resynced), len(segment["words"])))
         word_offset = 0
         start_ts = segment["start"]
         # while len(text) > max_chars or segment["end"] - start_ts > max_time:
@@ -398,6 +400,20 @@ def write_vtt(entries, filename, header="FILE"):
             f.write("\n")
 
 
+def fix_overlap(segments, max_overlap=0.5):
+    # We check if there is overlap between segments, and if it is just a little
+    # (less than max_overlap) we just remove the overlap. Larger overlaps we
+    # don't handle like this, it's probably a different error
+    for idx, segment in enumerate(segments):
+        if idx == 0:
+            continue
+        if segment["start"] < segments[idx - 1]["end"] and \
+           segment["start"] < segments[idx - 1]["end"] + max_overlap:
+            segments[idx - 1]["end"] = segments[idx]["start"]
+
+    return segments
+
+
 def process_task(cc, task):
 
     args = task["args"]
@@ -437,8 +453,10 @@ def process_task(cc, task):
 
     new_subs = [{"start": s["start"], "end": s["end"], "text": balance(s["text"], 40)} for s in new_segments]
 
+    new_subs = fix_overlap(new_subs)
+
     if dst.endswith(".json"):
-        
+
         # new_subs has text as a list of lines, this should be newline separated text
         for sub in new_subs:
             sub["text"] = "\n".join(sub["text"])
