@@ -104,7 +104,7 @@
           "vtt": {"output": "transcribe.dst"},
           "text": {"output": "transcribe.dst_txt"},
           "json": {"output": "transcribe.dst_words"},
-          "model": {"config": "model", "default": "large-v2"}
+          "model": {"output": "prepare.model"}
         }
       }
     ]
