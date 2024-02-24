@@ -4,7 +4,9 @@
       "port": {"help": "Port for server"},
       "dir": {"help": "Project directory, default '.'", "default": "."},
       "tmpdir": {"help": "Temporary directory", "default": "/tmp/"},
-      "archivedir": {"help": "Destination directory for archived copies"}
+      "archivedir": {"help": "Destination directory for archived copies"},
+      "model_dir": {"help": "Where to store models", "default": "/cc/whisper/.cache"},
+      "hf_token": {"help": "Huggingface token for diarization"}
     },
     "name": "Cryonite.NetTranscriber",
     "description": "Transcribe and format texts for media files",
@@ -76,7 +78,9 @@
           "lang": {"output": "start.lang"},
           "model": {"output": "prepare.model"},
           "dir": {"output": "prepare.dst"},
-          "reprocess": {"output": "start.reprocess"}
+          "reprocess": {"output": "start.reprocess"},
+          "model_dir": {"option": "model_dir"},
+          "hf_token": {"option": "hf_token"}
         }
       },
       {
