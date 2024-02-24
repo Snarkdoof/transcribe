@@ -33,7 +33,8 @@ ccmodule = {
         "initial_promot": "Provide context before the first audio",
         "use_api": "Use Whisper API, don't run the actual process",
         "segments": "If API is used, segments can be sent in and long pauses will be ignored",
-        "model_dir": "Default model directory for local models, default /scratch/models/"
+        "model_dir": "Default model directory for local models, default /scratch/models/",
+        "hf_token": "Huggingface token for dialogization using pyannote"
     },
     "outputs": {
         "dst": "Output file (VTT)",
@@ -168,20 +169,62 @@ def run_whisper_pipeline(cc, src, dst_dir, model, lang, stop_event,
     return 100, retval
 
 
-def run_whisper(cc, src, dst_dir, model, lang, stop_event, reprocess=False):
-    # cmd = ["whisper", "--output_dir", dst_dir, "--model", model, "--word_timestamps", "True"]
-    cmd = ["whisper_timestamped", "--output_dir", dst_dir, "--model", model, "--vad", "True", "--accurate"]
+def fix_whisperx_output(filename, speaker_prefix="Taler_"):
+    # We need to fix the output json from whisperx, it's not 100% what we want
+    with open(filename, "r") as f:
+        data = json.load(f)
+    for s in data["segments"]:
+        last_end = s["start"] 
+        for word in s["words"]:
+            if "start" not in word:
+                word["start"] = last_end
+                word["end"] = last_end
+            last_end = word["end"]
+            word["text"] = " " + word["word"]
+            del word["word"]
+        if s["end"] < s["start"]:
+            # TODO: Fix this - hook up with last segment instead? Seems to be single numbers...
+            s["end"] = s["start"]  # Very strange, should likely merge with last segment
+
+    # Also renumber speakers if we have them
+    speakers = []
+    for s in data["segments"]:
+        if "speaker" in s and s["speaker"] not in speakers:
+            speakers.append(s["speaker"])
+
+    # We have a bunch of speakers, now we rename them all
+    # For simplicity, we make json and string-replace the shit of out it
+    serialized = json.dumps(data["segments"], indent=2, ensure_ascii=False)
+    for snr, speaker in enumerate(speakers):
+        serialized = serialized.replace(speaker, f"{speaker_prefix}{snr:02}")
+
+    with open(filename, "w") as f:
+        f.write(serialized)
+
+
+def run_whisper(cc, src, dst_dir, model, lang, stop_event,
+                model_dir, 
+                token=None, reprocess=False, device=None):
+
+    cmd = ["whisperx",
+           "--output_dir", dst_dir,
+           "--model", model,
+           "--model_dir", model_dir]
+    if token:
+        cmd.extend(["--diarize", "--hf_token", token])
+
     if lang:
         cmd.extend(["--lang", lang])
+
     cmd.append(src)
     cc.log.info(" ".join(cmd))
     progress = 0
     cc.status["progress"] = 0
-    name = os.path.basename(src)
+    name = os.path.splitext(os.path.basename(src))[0]
     retval = {
         "dst": os.path.join(dst_dir, name) + ".vtt",
         "dst_txt": os.path.join(dst_dir, name) + ".txt",
-        "dst_words": os.path.join(dst_dir, name) + ".words.json"
+        "dst_words": os.path.join(dst_dir, name) + ".json"
     }
 
     if not reprocess and os.path.exists(retval["dst_words"]) and os.path.getsize(retval["dst_words"]) > 0:
@@ -199,8 +242,11 @@ def run_whisper(cc, src, dst_dir, model, lang, stop_event, reprocess=False):
             if p.poll() == 0:
                 progress = 100
                 cc.status["progress"] = progress
+
+                fix_whisperx_output(retval["dst_words"])
+
                 return progress, retval
-            raise Exception("w2vtranscriber failed with exit value %s" % p.poll())
+            raise Exception("whisperx failed with exit value %s" % p.poll())
 
         ready = select.select([p.stdout, p.stderr], [], [], 1.0)[0]
         for fd in ready:
@@ -255,7 +301,7 @@ def load_segment_file(filename, max_break=0.4, min_segment_length=0.6):
                 item["start"] = float(item["start"])
                 item["end"] = float(item["end"])
                 data.append(item)
-        
+
         # We don't want to do all segments, we want to create larger segments
         # where there is an actual break
         segments = []
@@ -294,6 +340,7 @@ def merge(target, item, timeoffset):
 
         target["segments"].append(updated_segment)
 
+
 def fix_words(res):
     """
     For some reason, the words are expected to be "word" but it's now called "text".
@@ -313,7 +360,7 @@ def process_task(cc, task, stop_event):
     print("MOD_WHISPER", task)
 
     args = task["args"]
-    use_pipeline = task.get("use_pipeline", True)
+    use_pipeline = task.get("use_pipeline", False)
     device = task.get("device", "cuda:0")
     model = args.get("model", "large-v2")
     model_dir = args.get("model_dir", "/scratch/models/")
@@ -332,12 +379,13 @@ def process_task(cc, task, stop_event):
     patience = args.get("patience", None)
     initial_prompt = args.get("initial_prompt", None)
     reprocess = args.get("reprocess", False)
+    hf_token = args.get("hf_token", "")
 
     base_dst = os.path.splitext(os.path.join(dst_dir, os.path.basename(src)))[0]
     retval = {
         "dst": base_dst + ".vtt",
         "dst_txt": base_dst + ".txt",
-        "dst_words": base_dst + "_words.json"
+        "dst_words": base_dst + ".json"
     }
 
     dst = retval["dst"]
@@ -350,18 +398,26 @@ def process_task(cc, task, stop_event):
         return 100, retval
 
     # Run from commandline or via API
-    if not use_api or use_pipeline:
+    if not use_api and use_pipeline:
         try:
             return run_whisper_pipeline(cc, src, dst_dir, model, lang,
                                         stop_event, reprocess, device)
         except Exception:
-            # Try once more after a bit - we seem to get an issue once in a while where a 
+            # Try once more after a bit - we seem to get an issue once in a while where a
             # directory exists while being created - possible sync issue?
             import random
             import time
             time.sleep(random.random() * 10)
             return run_whisper_pipeline(cc, src, dst_dir, model, lang,
                                         stop_event, reprocess, device)
+
+    if not use_api:
+        try:
+            return run_whisper(cc, src, dst_dir, model, lang,
+                               stop_event, model_dir, hf_token, reprocess, device)
+        except Exception as e:
+            cc.log.exception("Failed running whisper")
+            raise e
 
     # We're using the API, that means we run whisper_timestamped for now
     import whisper_timestamped as whisper
@@ -414,12 +470,11 @@ def process_task(cc, task, stop_event):
         del s["words"] 
 
     with open(dst, "w") as f:
-       writer = whisper.utils.WriteVTT(dst_dir)
-       writer.write_result(res, f)
- 
+        writer = whisper.utils.WriteVTT(dst_dir)
+        writer.write_result(res, f)
+
     with open(retval["dst_txt"], "w") as f:
         writer = whisper.utils.WriteTXT(dst_dir)
         writer.write_result(res, f)
-
 
     return 100, retval
