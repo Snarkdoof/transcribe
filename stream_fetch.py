@@ -114,11 +114,37 @@ def get_shittiest_quality(m3u8_content):
 
     return lowest_quality_url
 
+def get_best_quality(m3u8_content):
+    """
+    Parses an M3U8 playlist content and returns the URL of the best quality stream.
+
+    Args:
+        m3u8_content: The content of the M3U8 playlist as a string.
+
+    Returns:
+        The URL of the best quality stream, or None if no streams are found.
+    """
+    lines = m3u8_content.splitlines()
+    highest_bandwidth = 0
+    highest_quality_url = None
+
+    for i in range(len(lines)):
+        if lines[i].startswith("#EXT-X-STREAM-INF:"):
+            bandwidth_info = lines[i].split(":")[1]
+            bandwidth = int(bandwidth_info.split(",")[0].split("=")[1])
+
+            if bandwidth > highest_bandwidth:
+                highest_bandwidth = bandwidth
+                highest_quality_url = lines[i + 1]  # The URL is on the next line
+
+    return highest_quality_url
+
 
 def download(content_id, directory, output_filename):
     meta = get_json_from_id(content_id)
     m3u8_url, master = download_m3u8_from_json(meta)
-    playlist = get_shittiest_quality(master)
+    # playlist = get_shittiest_quality(master)
+    playlist = get_best_quality(master)
 
     # The "playlist, possibly with ../ in it, so we need to make it into a full
     # URL using the m3u8_url"

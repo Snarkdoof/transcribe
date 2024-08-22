@@ -20,18 +20,19 @@ def get_states(jobs):
     # request is a list of job id's
     request = [job['id'] for job in jobs]
     r = requests.post(SERVER + "/status/", json=request)
-    print(r)
     if r.status_code != 200:
         raise SystemExit("Woops")
     status = r.json()
+    print(status)
     return status
 
 
 def update_screen(stdscr, jobs, state):
     """
-    jobs: [{"id": jobid, resourceid": ..., "url": ...}]
+    jobs: [{"id": jobid, resourceid": ...}]
     state: {"resourceid": job's id, "retval": any return value,
             "steps": {"name": ..., "state":...} }
+
     """
     if stdscr:
         stdscr.clear()
@@ -45,7 +46,7 @@ def update_screen(stdscr, jobs, state):
     for i, job in enumerate(jobs, start=1):
 
         if not stdscr:
-            print(f"job: {job['id']}, {job['url']}")
+            print(f"job: {job['id']}, {job['contentid']}")
         # Check job state status
         if job["id"] in state:
             s = state[job["id"]]
@@ -79,28 +80,23 @@ def update_screen(stdscr, jobs, state):
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser()
-parser.add_argument("--url", required=False, help="URL value", default="")
-parser.add_argument("--weburl", required=False, help="Callback URL when done", default="")
-parser.add_argument("--contentid", required=True, help="ContentID value")
+parser.add_argument('-i', '--input', nargs='+', required=True, help='List of input files or content ids')
 parser.add_argument("--lang", required=False, help="Language", default="no")
 parser.add_argument("--model", required=False, help="Model", default="")
 parser.add_argument("--reprocess", action="store_true",
                     help="Specify whether to reprocess or not", default=False)
-parser.add_argument("--resources", required=False, default=None,
-                    help="Filename with list of resources, id: url\n")
 parser.add_argument("--curses", required=False, action="store_true", help="Model", default=False)
+parser.add_argument("--people_dir", required=False, help="Directory of existing people", default="")
+parser.add_argument("--speaker_dir", required=False, help="Directory of new speakers", default="")
 
 args = parser.parse_args()
 
-if not args.resources:
+if not args.input:
     if not args.url and not args.contentid:
         raise SystemExit("Need either resource or url and contentid")
 
 # Create the JSON payload
 data = {
-    "url": args.url,
-    "callbackurl": args.weburl,
-    "contentid": args.contentid,
     "lang": args.lang,
     "reprocess": args.reprocess,
 }
@@ -109,23 +105,17 @@ if args.model:
 else:
     data["model"] = default_models[args.lang]
 
+if args.people_dir:
+    data["people_dir"] = args.people_dir
+
 # SERVER = "https://cc.nlive.no/transcribe"
 # SERVER = "https://autotext.elevkanalen.no/transcribe"
 SERVER = "http://localhost:9996/"
 
-if args.resources:
-    with open(args.resources, "r") as f:
-        resources = [line.split(":", 1) for line in f.readlines()]
-else:
-    resources = [[args.contentid, args.url]]
-
-resources = [{"id": r[0], "url": r[1].strip()} for r in resources][:5]
-
 jobs = []
 
-for resource in resources:
-    data["url"] = resource["url"]
-    data["contentid"] = resource["id"]
+for cid in args.input:
+    data["contentid"] = cid
 
     # Convert the payload to JSON
     json_data = json.dumps(data)
@@ -136,8 +126,7 @@ for resource in resources:
     response.raise_for_status()
 
     job = response.json()
-    job["resourceid"] = resource["id"]
-    job["url"] = resource["url"]
+    job["resourceid"] = cid
     jobs.append(job)
     print("   ", job["id"])
 
@@ -162,6 +151,7 @@ def main(stdscr):
         try:
             multistate = get_states(activejobs)
         except Exception:
+            print("No connection")
             time.sleep(5)
             continue
 

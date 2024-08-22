@@ -263,7 +263,7 @@ def run_whisper(cc, src, dst_dir, model, lang, stop_event,
                 with open(retval["dst_words"], "w") as f:
                     json.dump(data["segments"], f, indent=2, ensure_ascii=False)
 
-                fix_whisperx_output(retval["dst_words"])
+                # fix_whisperx_output(retval["dst_words"])
 
                 return progress, retval
             raise Exception("whisperx failed with exit value %s" % p.poll())

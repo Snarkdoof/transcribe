@@ -5,16 +5,11 @@
       "dir": {"help": "Project directory, default '.'", "default": "."},
       "tmpdir": {"help": "Temporary directory", "default": "/tmp/"},
       "archivedir": {"help": "Destination directory for archived copies"},
-<<<<<<< HEAD
       "model_dir": {"help": "Where to store models", "default": "/jojo/.cache"},
       "hf_token": {"help": "Huggingface token for diarization"},
       "new_speaker_cutoff": {"help": "Cutoff for new speaker", "default": 0.25},
       "people_dir": {"help": "Directory for people files"},
       "cache_dir": {"help": "Directory for cache files"}
-=======
-      "model_dir": {"help": "Where to store models", "default": "/cc/whisper/.cache"},
-      "hf_token": {"help": "Huggingface token for diarization"}
->>>>>>> 380b39c0f20e4eafeab573ea42d7109d9c27a11e
     },
     "name": "Cryonite.NetTranscriber",
     "description": "Transcribe and format texts for media files",
@@ -28,12 +23,12 @@
           "port": {"config": "port", "default": 9996}
         },
         "outputs": {
-          "url": "Content URL",
-          "callbackurl": "callbackurl",
           "contentid": "ID of content",
           "lang": "Language",
           "reprocess": "Force reprocessing",
-          "model": "Model to use"
+          "model": "Model to use",
+          "people_dir": "Directory for existing speaker embeddings",
+          "speakers_dir": "Directory for new speaker embeddings"
         },
         "downstreamOf": ["entry"]
       },
@@ -44,7 +39,6 @@
         "workdir": {"option": "dir"},
         "args": {
           "model": {"output": "start.model"},
-          "src": {"output": "start.url"},
           "contentid": {"output": "start.contentid"},
           "dst": {"option": "archivedir"},
           "tmpdir": {"option": "tmpdir", "type": "tempdir", "id": "jjp1oi123"},
@@ -58,6 +52,7 @@
         "args": {
           "src": {"output": "parent.src"},
           "dst": {"output": "parent.wavfile"},
+          "mono": true,
           "audio_hz": 16000
         }
       },
@@ -79,7 +74,6 @@
           "reprocess": {"output": "start.reprocess"},
           "model_dir": {"option": "model_dir"},
           "hf_token": {"option": "hf_token"}
-<<<<<<< HEAD
         }
       },
       {
@@ -91,12 +85,11 @@
         "downstreamOf": ["transcribe"],
         "args": {
           "src": {"output": "extract_audio.dst"},
-          "segments": {"output": "transcribe.dst_words"},
           "dst": {"output": "prepare.dst"},
-          "people_dir": {"options": "people_dir"},
-          "cutoff": {"options": "new_speaker_cutoff"}
-=======
->>>>>>> 380b39c0f20e4eafeab573ea42d7109d9c27a11e
+          "basename": {"output": "prepare.basename"},
+          "segments": {"output": "transcribe.dst_words"},
+          "people_dir": {"output": "start.people_dir"},
+          "cutoff": {"option": "new_speaker_cutoff"}
         }
       },
       {
@@ -108,23 +101,6 @@
           "src": {"output": "transcribe.dst_words"},
           "dst": {"output": "prepare.dst"},
           "max_chars_per_line": 45
-        }
-      },
-      {
-        "module": "mod_callback",
-        "name": "callback",
-        "workdir": {"option": "dir"},
-        "downstreamOf": ["reformat"],
-        "args": {
-          "callbackurl": {"output": "start.callbackurl"},
-          "weburl": {"config": "weburl"},
-          "webroot": {"config": "webroot"},
-          "contentid": {"output": "start.contentid"},
-          "formatted": {"output": "parent.dst"},
-          "vtt": {"output": "transcribe.dst"},
-          "text": {"output": "transcribe.dst_txt"},
-          "json": {"output": "transcribe.dst_words"},
-          "model": {"output": "prepare.model"}
         }
       }
     ]

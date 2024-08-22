@@ -18,7 +18,7 @@ ccmodule = {
     },
     "outputs": {
         "src": "Source file (might be downloaded)",
-        "dst": "Output file",
+        "dst": "Output directory",
         "videofile": "Video file (or None if not video)",
         "wavfile": "Temporary sound file",
         "wavfilemono": "Temporary mono sound file",
