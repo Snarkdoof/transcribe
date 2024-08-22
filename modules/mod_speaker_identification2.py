@@ -896,7 +896,7 @@ def process_task(cc, task, stop_event):
     args = task["args"]
 
     src = args["src"]
-    segment_file = args["segments"]
+    segment_file = args.get("segments", None)
     vtt = args.get("vtt", None)
     dst = args["dst"]  # JSON subtitle file
     speakers = dst.replace("_subs.json", "_speakers.json")
@@ -929,9 +929,13 @@ def process_task(cc, task, stop_event):
         cc.log.warning("Cache didn't catch this one either")
         return 100, {"dst": dst, "cast": castsource}
 
-    if segment_file.endswith(".csv"):
-        segments = vc.read_csv(segment_file)
+    if not segment_file:
+        # Use segments from subs
+        segments = subs
     else:
+      if segment_file.endswith(".csv"):
+        segments = vc.read_csv(segment_file)
+      else:
         raise Exception("Bad file format for segments: '%s'" % segment_file)
 
     cc.log.debug("Loaded %d segments" % len(segments))

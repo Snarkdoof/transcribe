@@ -4,7 +4,12 @@
       "port": {"help": "Port for server"},
       "dir": {"help": "Project directory, default '.'", "default": "."},
       "tmpdir": {"help": "Temporary directory", "default": "/tmp/"},
-      "archivedir": {"help": "Destination directory for archived copies"}
+      "archivedir": {"help": "Destination directory for archived copies"},
+      "model_dir": {"help": "Where to store models", "default": "/jojo/.cache"},
+      "hf_token": {"help": "Huggingface token for diarization"},
+      "new_speaker_cutoff": {"help": "Cutoff for new speaker", "default": 0.25},
+      "people_dir": {"help": "Directory for people files"},
+      "cache_dir": {"help": "Directory for cache files"}
     },
     "name": "Cryonite.NetTranscriber",
     "description": "Transcribe and format texts for media files",
@@ -28,18 +33,6 @@
         "downstreamOf": ["entry"]
       },
       {
-        "module": "mod_gcloud",
-        "name": "CheckServers",
-        "ccnode": "cc-root",
-        "maxParallel": 1,
-        "type": "admin",
-        "downstreamOf": ["start"],
-        "workdir": {"option": "dir"},
-        "args": {
-          "start": ["instance-1"]
-        }
-      },
-      {
         "module": "mod_prep_net",
         "name": "prepare",
         "downstreamOf": ["start"],
@@ -49,7 +42,8 @@
           "src": {"output": "start.url"},
           "contentid": {"output": "start.contentid"},
           "dst": {"option": "archivedir"},
-          "tmpdir": {"option": "tmpdir", "type": "tempdir", "id": "jjp1oi123"}
+          "tmpdir": {"option": "tmpdir", "type": "tempdir", "id": "jjp1oi123"},
+          "cache_dir": {"option": "cache_dir"}
         }
       },
       {
@@ -66,26 +60,44 @@
         "module": "mod_whisper",
         "name": "transcribe",
         "gpu": true,
-        "docker": "whisper",
+        "docker": "jojoturbo",
         "workdir": {"option": "dir"},
         "downstreamOf": ["extract_audio"],
-        "volumes": [["/tmp/cache", "/cc/whisper/.cache", "rw"]],
+        "volumes": [["/home/cache/jojoturbo", "/jojo/.cache", "rw"],
+                    ["/home/cache/hf", "/jojo/hub", "rw"]],
         "args": {
           "use_api": false,
           "src": {"output": "parent.dst"},
           "lang": {"output": "start.lang"},
           "model": {"output": "prepare.model"},
           "dir": {"output": "prepare.dst"},
-          "reprocess": {"output": "start.reprocess"}
+          "reprocess": {"output": "start.reprocess"},
+          "model_dir": {"option": "model_dir"},
+          "hf_token": {"option": "hf_token"}
+        }
+      },
+      {
+        "module": "mod_speaker_identification_schiblib",
+        "name": "speaker_identify",
+        "gpu": true,
+        "docker": "jojoturbo",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["transcribe"],
+        "args": {
+          "src": {"output": "extract_audio.dst"},
+          "segments": {"output": "transcribe.dst_words"},
+          "dst": {"output": "prepare.dst"},
+          "people_dir": {"options": "people_dir"},
+          "cutoff": {"options": "new_speaker_cutoff"}
         }
       },
       {
         "module": "mod_reformat2",
         "name": "reformat",
         "workdir": {"option": "dir"},
-        "downstreamOf": ["transcribe"],
+        "downstreamOf": ["speaker_identify"],
         "args": {
-          "src": {"output": "parent.dst_words"},
+          "src": {"output": "transcribe.dst_words"},
           "dst": {"output": "prepare.dst"},
           "max_chars_per_line": 45
         }

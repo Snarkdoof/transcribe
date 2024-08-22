@@ -140,7 +140,7 @@ class VoiceDetector:
                 #    raise SystemExit("What, starts with voice (%d)?" % idx)
 
             elif triggered and (not is_speech or \
-                  (idx * frame_duration_ms) - start > max_segment_length * 1000):
+                                (idx * frame_duration_ms) - start > max_segment_length * 1000):
                 if padding < padding_frames:
                     padding += 1
                     continue
@@ -217,8 +217,6 @@ def process_task(cc, task):
     if not dst:
         dst = os.path.splitext(src)[0] + "_segments." + args.get("format", "json")
 
-    if os.path.exists(dst):
-        return 100, {"dst": dst}
     detector = VoiceDetector(src, output_dir=args.get("output_dir", None))
     segments = detector.analyze(aggressive=args.get("aggressive", 2),
                                 max_pause=float(args.get("max_pause", 0)),
@@ -227,6 +225,9 @@ def process_task(cc, task):
     # Dump json
     print("Segments", segments)
     if dst.endswith("json"):
+        for s in segments:
+            del s["data"]
+            del s["idx"]
         with open(dst, "w") as f:
             json.dump(segments, f, indent=" ")
     else:

@@ -50,6 +50,7 @@ def fix_first_segment(segments):
 
     return segments
 
+
 def fix_segment_start(segment):
     # Some segments, in particular the first one after a while, has a start
     # point that is very wrong. If the first word lasts for much longer than
@@ -101,7 +102,7 @@ def merge_segments(segments):
 
         if "words" not in segment:
             print("Weird segment!", segment)
-        segment = fix_segment_start(segment)
+        #segment = fix_segment_start(segment)
 
         # If the text segment is a list, concat them
         if isinstance(segment["text"], list):
@@ -167,7 +168,7 @@ def resynchronize(modified_string, original_word_list, similarity_threshold=80):
                 # this is a bit of a hack that shouldn't be necessary, but we
                 # get some of these in particular when whisper is repeating
                 # itself/hallucinating
-                if modified_words[j1:j2][0] == "".join(original_words[i1:i2]):
+                if modified_words[j1:j2][0] == "".join(original_words[i1:i2]).replace("  ", " "):
                     for original_word_obj in original_word_list[i1:i2]:
                         synchronized_word_list.append(original_word_obj)
                     continue
@@ -209,7 +210,9 @@ def get_cut_point(words, max_time, max_chars, pause_threshold=0.6):
             cut_stop = i  # Fullstop
 
         if word["text"][-1] in [",", ":"]:
-            cut_punctuation = i  # punctuation
+            # Not if there is a letter immediately after
+            if i < len(words) - 1 and not words[i + 1]["text"][0].isalpha():
+                cut_punctuation = i  # punctuation
 
         if word['start'] - last_end_time > pause_threshold:
             cut_pause = i - 1  # Too long time
@@ -266,56 +269,73 @@ def split_segments(segments, max_chars, max_cps=20.0, max_time=7.0):
 
         # duration - if it's too long, we split
         if (max_time is None or segment["end"] - segment["start"] < max_time) and \
-            len(segment["text"]) < max_chars:
-                new_segments.append(segment)
-                continue
+          len(segment["text"]) < max_chars:
+            new_segments.append(segment)
+            continue
 
-        fulltext = segment["text"].strip()
+        fulltext = segment["text"].strip().replace("  ", " ")
         text = segment["text"].strip()
-        resynced = resynchronize(fulltext, segment["words"], SIMILARITY)
-
-        words = [w["updated"] for w in resynced]
-        words = fulltext.replace("\n", " ").split()
+        # resynced = resynchronize(fulltext, segment["words"], SIMILARITY)
+        words = []
+        for word in segment["words"]:
+            if word["text"].startswith(" ") or len(words) == 0:
+                words.append({"text": word["text"].lstrip(),
+                              "start": word["start"],
+                              "end": word["start"]})
+            else:
+                print(f'Length of words: {len(words)}')
+                words[-1]["text"] += word["text"]
+        if len(words) != len(fulltext.split(" ")):
+            print(f'Readjusted words from {len(fulltext.split(" "))} vs {len(segment["words"])} to {len(words)}')
+        resynced = words
+        # words = [w["updated"] for w in resynced]
+        # words = fulltext.replace("\n", " ").split()
         # words = [w["text"] for w in segment["words"]]
-        if len(resynced) < len(segment["words"]):
+        if 0 and len(resynced) < len(fulltext.split(" ")):
             print("fulltext\n", fulltext)
-            print("words\n", " ".join([w["text"] for w in segment["words"]]))
-            print("Resync\n", " ".join([w["text"] for w in resynced]))
+            print("words\n", " ".join([w["text"] for w in words]))  # [w["text"].lstrip() for w in segment["words"]]))
+            print("Resync\n", " ".join([w["text"].lstrip() for w in resynced]))
             print("BAD RESYNC, using original")
-            resynced = segment["words"]
+            print(f'Length of words {len(words)} vs {len(fulltext.split(" "))}"')
+            for i in range(min(len(words), len(fulltext.split(" ")))):
+                if words[i]["text"] != fulltext.split(" ")[i]:
+                    print(f'{i}: "{words[i]}" vs "{fulltext.split(" ")[i]}"')
+            # resynced = segment["words"]
+            resynced = words
             # raise Exception("Bad resync, {} words, expected {}".format(len(resynced), len(segment["words"])))
         word_offset = 0
         start_ts = segment["start"]
         # while len(text) > max_chars or segment["end"] - start_ts > max_time:
         while word_offset < len(resynced):
 
-            wordnr = word_offset + get_cut_point(segment["words"][word_offset:], max_time, max_chars)
-            t = " ".join([s["text"] for s in segment["words"][word_offset:wordnr+1]])
+            wordnr = word_offset + get_cut_point(words[word_offset:], max_time, max_chars)
+            t = " ".join([s["text"] for s in words[word_offset:wordnr+1]])
 
             min_length = len(t) / 20.  # 20 chars pr second is quite fast
             new_segment = {
                 "start": start_ts,
-                    "end": max(resynced[wordnr]["end"], start_ts + min_length),
+                "end": max(resynced[wordnr]["end"], start_ts + min_length),
                 "text": t
             }
 
             new_segments.append(new_segment)
-            start_ts = new_segment["end"] #  # Better if this is immediately after (if it's a continuation)
+            # Better if this is immediately after (if it's a continuation)
+            start_ts = new_segment["end"]
             # If the previous char was some sort of stop, allow pause
             if word_offset > 0 and word_offset < len(resynced) and \
                resynced[word_offset - 1]["text"] and \
                resynced[word_offset - 1]["text"][-1] in [".", ",", "!", "?"]:
-                  new_segment["start"] = resynced[word_offset]["start"]
+                new_segment["start"] = resynced[word_offset]["start"]
             word_offset = wordnr + 1
 
     print("Converted %d segments to %d segments" % (len(segments), len(new_segments)))
 
     for s in new_segments:
-      s["text"]: balance(s["text"], 40)
+        s["text"] = balance(s["text"], 40)
 
-      # Sanity
-      if s["end"] < s["start"]:
-        raise Exception("Segment ends before it starts", s)
+        # Sanity
+        if s["end"] < s["start"]:
+            raise Exception("Segment ends before it starts", s)
 
     return new_segments
 
@@ -331,12 +351,16 @@ def find_cutpoints(text, items="fullstop", maxlen=37):
 
     return [(match.start(), match.group()) for match in re.finditer(r[items], text[:maxlen] + " ")]
 
+
 def balance(text, max_chars):
     """
     Ensure that the lines are of similar length
     """
     if not text:
         return text
+
+    if isinstance(text, list):
+        text = " ".join(text)
 
     text = text.replace("  ", " ")
 
@@ -363,6 +387,7 @@ def balance(text, max_chars):
 
     return lines
 
+
 def trim(s):
     # Remove additional spaces, also spaces in front of punctuation
     import re
@@ -374,12 +399,14 @@ def trim(s):
         s = s[:m.span()[0]] + s[m.span()[0] + 1:]
     return s.strip()
 
+
 def sec2time(sec):
     h = int(sec // 3600)
     m = int((sec // 60) % 60)
     s = int(sec % 60)
     ms = int((sec - int(sec)) * 1000)
     return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
 
 def write_vtt(entries, filename, header="FILE"):
     with open(filename, "w") as f:
@@ -414,6 +441,28 @@ def fix_overlap(segments, max_overlap=0.5):
     return segments
 
 
+def ensure_words_are_sequential(segments):
+    """
+    Issues with buggy transformers sometimes identifies timestamps for words as
+    a previous utterance of the same word. Detect and guess-fix.
+    """
+    last_ts = 0
+    for segment in segments:
+        if "word" not in segment:
+            continue
+        for word in segment["word"]:
+            if word["start"] < last_ts:
+                print("Fixing word timestamp", word["start"], last_ts, word["text"][:10], "...")
+                word["end"] = last_ts + word["end"] - word["start"]
+                word["start"] = last_ts
+            last_ts = word["end"]
+        segment["start"] = segment["word"][0]["start"]
+        segment["end"] = segment["word"][-1]["end"]
+
+        if segment["end"] < segment["start"]:
+            raise Exception("Segment ends before it starts", segment)
+
+
 def process_task(cc, task):
 
     args = task["args"]
@@ -442,16 +491,20 @@ def process_task(cc, task):
     with open(src, "r") as f:
         subs = json.load(f)
 
-    # Merge segments if they are the same speaker so we can re-split them better
     if "segments" in subs:
         subs = subs["segments"]
 
+    # Check for bugs
+    ensure_words_are_sequential(subs)
+
+    # Merge segments if they are the same speaker so we can re-split them better
     new_segments = merge_segments(subs)
 
     # Split splits for maximum length, we don't want two full, long lines if possible
     new_segments = split_segments(new_segments, math.floor(max_chars * 1.5), max_time=max_time)
 
-    new_subs = [{"start": s["start"], "end": s["end"], "text": balance(s["text"], 40)} for s in new_segments]
+    new_subs = [{"start": s["start"], "end": s["end"], 
+                 "text": balance(s["text"], 40)} for s in new_segments]
 
     new_subs = fix_overlap(new_subs)
 

@@ -13,7 +13,8 @@ ccmodule = {
         "contentid": "The ID of the item",
         "item": "Item map containing keys 'id', 'url' and 'processed'",
         "baseurl": "Base URL for final files",
-        "model": "Model to use (Default SCREAM)"
+        "model": "Model to use (Default SCREAM)",
+        "cache_dir": "Cache directory"
     },
     "outputs": {
         "src": "Source file (might be downloaded)",
@@ -58,13 +59,20 @@ def process_task(cc, task):
 
     args = task["args"]
     tmpdir = args.get("tmpdir", "/tmp")
-
+    cache_dir = args.get("cache_dir", tmpdir)
     model = args.get("model", None)
     if not model:
         model = "/scratch/models/scream_non_large_3e60_beams5_v2.bin"
 
     if not os.path.exists(tmpdir):
         os.makedirs(tmpdir)
+
+    if args.get("src", "") == "":
+        # We only have a content ID, we need to download it from STREAM
+        from stream_fetch import download
+        cc.log.info("Downloading from stream '%s'" % args["contentid"])
+        fn = download(args["contentid"], cache_dir, args["contentid"])
+        args["src"] = fn
 
     if args.get("item", None):
         # We got an item to download, with keys id and url (and "processed")
