@@ -106,7 +106,7 @@ def process_task(cc, task):
         os.makedirs(p)
 
     d = os.path.splitext(args["src"])[0]
-    mp3 =  d + ".mp3"
+    mp3 = d + ".mp3"
     subs = d + "_subs.json"
     info = d + "_info.json"
     manifest = d + ".json"
