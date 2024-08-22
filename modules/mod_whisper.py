@@ -29,7 +29,7 @@ ccmodule = {
         "device": "Device, e.g. cuda:0 or cpu, default cuda:0",
         "lang": "Language, default autodetect",
         "dir": "Directory to place files",
-        "reprocess": "Force reprocessing, default False", 
+        "reprocess": "Force reprocessing, default False",
         "initial_promot": "Provide context before the first audio",
         "use_api": "Use Whisper API, don't run the actual process",
         "segments": "If API is used, segments can be sent in and long pauses will be ignored",
@@ -141,7 +141,7 @@ def run_whisper_pipeline(cc, src, dst_dir, model, lang, stop_event,
               'language': lang,
               'num_beams': 3}
     cc.log.debug("Transcribing")
-    res = pipe(src, generate_kwargs=kwargs, 
+    res = pipe(src, generate_kwargs=kwargs,
                chunk_length_s=28,
                stride_length_s=2,
                batch_size=6)
@@ -169,8 +169,41 @@ def run_whisper_pipeline(cc, src, dst_dir, model, lang, stop_event,
     return 100, retval
 
 
+def fix_whisperx_output(filename, speaker_prefix="Taler_"):
+    # We need to fix the output json from whisperx, it's not 100% what we want
+    with open(filename, "r") as f:
+        data = json.load(f)
+    for s in data["segments"]:
+        last_end = s["start"]
+        for word in s["words"]:
+            if "start" not in word:
+                word["start"] = last_end
+                word["end"] = last_end
+            last_end = word["end"]
+            word["text"] = " " + word["word"]
+            del word["word"]
+        if s["end"] < s["start"]:
+            # TODO: Fix this - hook up with last segment instead? Seems to be single numbers...
+            s["end"] = s["start"]  # Very strange, should likely merge with last segment
+
+    # Also renumber speakers if we have them
+    speakers = []
+    for s in data["segments"]:
+        if "speaker" in s and s["speaker"] not in speakers:
+            speakers.append(s["speaker"])
+
+    # We have a bunch of speakers, now we rename them all
+    # For simplicity, we make json and string-replace the shit of out it
+    serialized = json.dumps(data["segments"], indent=2, ensure_ascii=False)
+    for snr, speaker in enumerate(speakers):
+        serialized = serialized.replace(speaker, f"{speaker_prefix}{snr:02}")
+
+    with open(filename, "w") as f:
+        f.write(serialized)
+
+
 def run_whisper(cc, src, dst_dir, model, lang, stop_event,
-                model_dir, 
+                model_dir,
                 token=None, reprocess=False, device=None):
 
     cmd = ["whisperx",
@@ -194,7 +227,8 @@ def run_whisper(cc, src, dst_dir, model, lang, stop_event,
         "dst_words": os.path.join(dst_dir, name) + ".json"
     }
 
-    if not reprocess and os.path.exists(retval["dst_words"]) and os.path.getsize(retval["dst_words"]) > 0:
+    if not reprocess and os.path.exists(retval["dst_words"]) and \
+            os.path.getsize(retval["dst_words"]) > 0:
         return 100, retval
 
     cc.log.warning(str(cmd))
@@ -210,11 +244,11 @@ def run_whisper(cc, src, dst_dir, model, lang, stop_event,
                 progress = 100
                 cc.status["progress"] = progress
 
-		# We need to fix the output json from whisperx, it's not 100% what we want
+                # We need to fix the output json from whisperx, it's not 100% what we want
                 with open(retval["dst_words"], "r") as f:
                     data = json.load(f)
                 for s in data["segments"]:
-                    last_end = s["start"] 
+                    last_end = s["start"]
                     for word in s["words"]:
                         if "start" not in word:
                             word["start"] = last_end
@@ -223,10 +257,14 @@ def run_whisper(cc, src, dst_dir, model, lang, stop_event,
                         word["text"] = " " + word["word"]
                         del word["word"]
                     if s["end"] < s["start"]:
-                        # TODO: Fix this - hook up with last segment instead? Seems to be single numbers...
+                        # TODO: Fix this - hook up with last segment instead?
+                        # Seems to be single numbers...
                         s["end"] = s["start"]  # Very strange, should likely merge with last segment
                 with open(retval["dst_words"], "w") as f:
                     json.dump(data["segments"], f, indent=2, ensure_ascii=False)
+
+                fix_whisperx_output(retval["dst_words"])
+
                 return progress, retval
             raise Exception("whisperx failed with exit value %s" % p.poll())
 
@@ -299,7 +337,7 @@ def load_segment_file(filename, max_break=0.4, min_segment_length=0.6):
                     segments[-1]["end"] = segment["end"]
                 else:
                     # New segment
-                    segments.append(segment)                
+                    segments.append(segment)
 
         return segments
 
@@ -358,8 +396,6 @@ def process_task(cc, task, stop_event):
     use_api = args.get("use_api", False)
     segment_file = args.get("segments", None)
     dst_dir = args.get("dir", "/tmp")
-    patience = args.get("patience", None)
-    initial_prompt = args.get("initial_prompt", None)
     reprocess = args.get("reprocess", False)
     hf_token = args.get("hf_token", "")
 
@@ -411,9 +447,9 @@ def process_task(cc, task, stop_event):
 
     # Ignore segments fully - DEBUG
     if 0:
-        res = whisper.transcribe(model, audio, language=lang,            
-                             beam_size=5, best_of=5,
-                             temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0))
+        res = whisper.transcribe(model, audio, language=lang,
+                                 beam_size=5, best_of=5,
+                                 temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0))
     else:
         # We should use VAD to ensure that we avoid large pauses - these will
         # confuse timestamps
@@ -429,16 +465,17 @@ def process_task(cc, task, stop_event):
             endsample = segment["end"] * 16000
             cc.log.info(segment)
             cc.log.info("   {} -> {}".format(startsample, endsample))
-            r = whisper.transcribe(model, audio[int(startsample):int(endsample)], language=lang,            
-                                 beam_size=5, best_of=5,
-                                 temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0))
+            r = whisper.transcribe(model, audio[int(startsample):int(endsample)], language=lang,
+                                   beam_size=5, best_of=5,
+                                   temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0))
 
             DBG.append({"segment": segment, "result": r})
             # Need to re-timestamp everything....
             try:
                 merge(res, r, segment["start"])
-            except Exception as e:
-                cc.log.exception("Processing segment {} -> {}".format(segment["start"], segment["end"]))
+            except Exception:
+                cc.log.exception("Processing segment {} -> {}".format(segment["start"],
+                                                                      segment["end"]))
 
         with open("/tmp/dbg_whisper.json", "w") as f:
             json.dump(DBG, f)
@@ -449,7 +486,7 @@ def process_task(cc, task, stop_event):
         json.dump(res, f, indent=" ")
 
     for s in res["segments"]:
-        del s["words"] 
+        del s["words"]
 
     with open(dst, "w") as f:
         writer = whisper.utils.WriteVTT(dst_dir)
