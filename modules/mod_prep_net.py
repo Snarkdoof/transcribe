@@ -61,7 +61,7 @@ def process_task(cc, task):
     tmpdir = args.get("tmpdir", "/tmp")
     cache_dir = args.get("cache_dir", tmpdir)
     model = args.get("model", None)
- 
+
     if not model:
         model = "NbAiLab/nb-whisper-large"
 

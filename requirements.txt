@@ -1,0 +1,22 @@
+transformers
+torchvision
+# pyannote.audio
+ftfy
+# deepspeed
+# accelerate
+diffusers
+fuzzywuzzy[speedup]
+openai
+protobuf
+SimpleWebSocketServer
+webrtcvad
+
+# Deps of nemo-asr
+hydra-core
+lhotse
+editdistance
+jiwer
+webdataset
+datasets
+huggingface_hub==0.22.0
+nemo-asr
