@@ -59,7 +59,7 @@ def update_screen(stdscr, jobs, state):
                             txt = s['retval']['status']
                         else:
                             txt = s['retval']
-                        stdscr.addstr(offset, 0, f"{job['id']}   Done  {txt}\n")
+                        stdscr.addstr(offset, 0, f"{job['id']} Done  {txt}\n")
                         offset += 1
                     else:
                         print("   Done\n")
@@ -68,7 +68,7 @@ def update_screen(stdscr, jobs, state):
                 elif step["state"] != "Done":
                     # This is the one we show
                     if stdscr:
-                        stdscr.addstr(offset, 0, f"{job['id']}   {step['name']} {step['state']}\n")
+                        stdscr.addstr(offset, 0, f"{job['id']} {step['name']} {step['state']}\n")
                         offset += 1
                     else:
                         print(f"   {step['name']} {step['state']}\n")
@@ -80,7 +80,9 @@ def update_screen(stdscr, jobs, state):
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('-i', '--input', nargs='+', required=True, help='List of input files or content ids')
+parser.add_argument('-i', '--input', nargs='+', required=True,
+                    help='List of content ids')
+parser.add_argument("--url", required=False, help="URL to resource (only one input!)", default="")
 parser.add_argument("--lang", required=False, help="Language", default="no")
 parser.add_argument("--model", required=False, help="Model", default="")
 parser.add_argument("--reprocess", action="store_true",
@@ -88,6 +90,9 @@ parser.add_argument("--reprocess", action="store_true",
 parser.add_argument("--curses", required=False, action="store_true", help="Model", default=False)
 parser.add_argument("--people_dir", required=False, help="Directory of existing people", default="")
 parser.add_argument("--speaker_dir", required=False, help="Directory of new speakers", default="")
+parser.add_argument("--archive_url", required=False, help="URL to archive", default="")
+parser.add_argument("--cutoff", required=False, default=None,
+                    help="New speaker cutoff, lower number = fewer speakers")
 
 args = parser.parse_args()
 
@@ -98,8 +103,11 @@ if not args.input:
 # Create the JSON payload
 data = {
     "lang": args.lang,
-    "reprocess": args.reprocess,
+    "reprocess": args.reprocess
 }
+if args.url:
+    data["src"] = args.url
+
 if args.model:
     data["model"] = args.model
 else:
@@ -107,6 +115,12 @@ else:
 
 if args.people_dir:
     data["people_dir"] = args.people_dir
+
+if args.archive_url:
+    data["archive_url"] = args.archive_url
+
+if args.cutoff:
+    data["cuttoff"] = args.cutoff
 
 # SERVER = "https://cc.nlive.no/transcribe"
 # SERVER = "https://autotext.elevkanalen.no/transcribe"

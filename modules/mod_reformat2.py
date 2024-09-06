@@ -1,7 +1,6 @@
 import json
 import re
 import math
-import textwrap
 import os
 
 ccmodule = {
@@ -12,7 +11,7 @@ ccmodule = {
         "src": "Source file to convert",
         "dst": "Destination file",
         "basename": "Base name for result files",
-        "format": "vtt, json",
+        "format": "vtt, json, both",
         "max_chars_per_line": "Maximum chars pr line, default 37",
         "max_time_pr_sub": "Maximum time span for a subtitle default 6.0 seconds"
     },
@@ -71,8 +70,9 @@ def fix_segment_start(segment):
 
     avg_speed = sum(speed) / len(speed)
     est_start = first_word["end"] - (len(first_word["text"]) / avg_speed)
-    if segment["words"][1]["start"] - first_word["end"] > 1.0: # Huge gap to next word
-        segment["start"] = max(0, segment["words"][1]["start"] - (len(first_word["text"]) / avg_speed))
+    if segment["words"][1]["start"] - first_word["end"] > 1.0:  # Huge gap to next word
+        segment["start"] = max(0, segment["words"][1]["start"] -
+                               (len(first_word["text"]) / avg_speed))
         segment["words"][0]["start"] = max(0, segment["start"])
         segment["words"][0]["end"] = segment["words"][1]["start"]
     elif abs(est_start - first_word["start"]) > 0.5:
@@ -86,23 +86,23 @@ def merge_segments(segments):
     # We go through the segments and merge those that are next to each other and
     # doesn end with some sort of full stop
 
-    fullstops = "[\.?!]"
+    fullstops = r"[\.?!]"
 
     new_segments = []
 
     # First segment is tricky, often due to jingles
-    #segments = fix_first_segment(segments)
+    # segments = fix_first_segment(segments)
 
     merge_segment = None
     for segment in segments:
 
-        if not "text" in segment or not segment["text"]:
+        if "text" not in segment or not segment["text"]:
             print("Not a text segment")
             continue
 
         if "words" not in segment:
             print("Weird segment!", segment)
-        #segment = fix_segment_start(segment)
+        # segment = fix_segment_start(segment)
 
         # If the text segment is a list, concat them
         if isinstance(segment["text"], list):
@@ -136,10 +136,12 @@ def merge_segments(segments):
     # print(len(segments), "converted to", len(new_segments))
     return new_segments
 
+
 def similar_word(word1, word2, threshold=80):
     from fuzzywuzzy import fuzz
     similarity = fuzz.ratio(word1, word2)
     return similarity >= threshold
+
 
 def resynchronize(modified_string, original_word_list, similarity_threshold=80):
     import difflib
@@ -154,7 +156,9 @@ def resynchronize(modified_string, original_word_list, similarity_threshold=80):
         elif op == "insert":
             for _ in range(j1, j2):
                 if len(synchronized_word_list) > 0:
-                    synchronized_word_list.append({"text": "", "start": synchronized_word_list[-1]["end"], "end": synchronized_word_list[-1]["end"]})
+                    synchronized_word_list.append({"text": "",
+                                                   "start": synchronized_word_list[-1]["end"],
+                                                   "end": synchronized_word_list[-1]["end"]})
                 else:
                     synchronized_word_list.append({"text": "", "start": 0, "end": 0})
 
@@ -179,7 +183,9 @@ def resynchronize(modified_string, original_word_list, similarity_threshold=80):
                         break
                 else:
                     if len(synchronized_word_list) > 0:
-                        synchronized_word_list.append({"text": "", "start": synchronized_word_list[-1]["end"], "end": synchronized_word_list[-1]["end"]})
+                        synchronized_word_list.append({"text": "",
+                                                       "start": synchronized_word_list[-1]["end"],
+                                                       "end": synchronized_word_list[-1]["end"]})
                     else:
                         synchronized_word_list.append({"text": "", "start": 0, "end": 0})
 
@@ -262,8 +268,6 @@ def split_segments(segments, max_chars, max_cps=20.0, max_time=7.0):
     If there is punctuation in the final 30%, split on that.
     max_cps is maximum chars pr second - will adjust the minimum length of a sub
     """
-    SIMILARITY = 50  # How similar to detect as same word?
-
     new_segments = []
     for segment in segments:
 
@@ -274,7 +278,6 @@ def split_segments(segments, max_chars, max_cps=20.0, max_time=7.0):
             continue
 
         fulltext = segment["text"].strip().replace("  ", " ")
-        text = segment["text"].strip()
         # resynced = resynchronize(fulltext, segment["words"], SIMILARITY)
         words = []
         for word in segment["words"]:
@@ -286,14 +289,15 @@ def split_segments(segments, max_chars, max_cps=20.0, max_time=7.0):
                 print(f'Length of words: {len(words)}')
                 words[-1]["text"] += word["text"]
         if len(words) != len(fulltext.split(" ")):
-            print(f'Readjusted words from {len(fulltext.split(" "))} vs {len(segment["words"])} to {len(words)}')
+            print(f'Readjusted words from {len(fulltext.split(" "))} vs "\
+                  f"{len(segment["words"])} to {len(words)}')
         resynced = words
         # words = [w["updated"] for w in resynced]
         # words = fulltext.replace("\n", " ").split()
         # words = [w["text"] for w in segment["words"]]
         if 0 and len(resynced) < len(fulltext.split(" ")):
             print("fulltext\n", fulltext)
-            print("words\n", " ".join([w["text"] for w in words]))  # [w["text"].lstrip() for w in segment["words"]]))
+            print("words\n", " ".join([w["text"] for w in words]))
             print("Resync\n", " ".join([w["text"].lstrip() for w in resynced]))
             print("BAD RESYNC, using original")
             print(f'Length of words {len(words)} vs {len(fulltext.split(" "))}"')
@@ -302,7 +306,7 @@ def split_segments(segments, max_chars, max_cps=20.0, max_time=7.0):
                     print(f'{i}: "{words[i]}" vs "{fulltext.split(" ")[i]}"')
             # resynced = segment["words"]
             resynced = words
-            # raise Exception("Bad resync, {} words, expected {}".format(len(resynced), len(segment["words"])))
+
         word_offset = 0
         start_ts = segment["start"]
         # while len(text) > max_chars or segment["end"] - start_ts > max_time:
@@ -344,7 +348,8 @@ def find_cutpoints(text, items="fullstop", maxlen=37):
     """
     Items can be "fullstop" for ".!?", pause for ",-:;" and "space" for whitespace
     """
-    r = {"fullstop": "[\.\?\!] ", "pause": "[,:;] ", "stops": "[\.\?\!,:;] ", "space": "[\W]", "punctuation": "[\.?!,:;-]"}
+    r = {"fullstop": r"[\.\?\!] ", "pause": r"[,:;] ", "stops": r"[\.\?\!,:;] ",
+         "space": r"[\W]", "punctuation": r"[\.?!,:;-]"}
 
     if items not in r:
         raise Exception("Bad cutpoint '%s'" % items)
@@ -363,9 +368,6 @@ def balance(text, max_chars):
         text = " ".join(text)
 
     text = text.replace("  ", " ")
-
-    #if len(text) < max_chars:
-    #    return [trim(text)]
 
     mid_point = int(len(text) / 2)
 
@@ -393,7 +395,7 @@ def trim(s):
     import re
 
     while True:
-        m = re.search("(\s[\W\s])", s)
+        m = re.search(r"(\s[\W\s])", s)
         if not m:
             break
         s = s[:m.span()[0]] + s[m.span()[0] + 1:]
@@ -469,11 +471,12 @@ def process_task(cc, task):
     src = args["src"]
     dst = args["dst"]
     basename = args.get("basename", None)
-    fileformat = args.get("format", "vtt")
+    fileformat = args.get("format", "both")
 
     if os.path.isdir(dst):
         # Create a new destination
-        dst = os.path.join(dst, os.path.splitext(os.path.basename(src))[0]) + ".{}".format(fileformat)
+        dst = os.path.join(dst, os.path.splitext(os.path.basename(src))[0]) + \
+            ".{}".format(fileformat)
 
     dst_dir = os.path.split(dst)[0]
 
@@ -485,7 +488,7 @@ def process_task(cc, task):
         os.makedirs(dst_dir)
 
     max_chars = int(args.get("max_chars_per_line", 40))
-    max_time = float(args.get("max_time_pr_sub",6.0))
+    max_time = float(args.get("max_time_pr_sub", 6.0))
 
     print("Processing", src)
     with open(src, "r") as f:
@@ -503,12 +506,23 @@ def process_task(cc, task):
     # Split splits for maximum length, we don't want two full, long lines if possible
     new_segments = split_segments(new_segments, math.floor(max_chars * 1.5), max_time=max_time)
 
-    new_subs = [{"start": s["start"], "end": s["end"], 
+    new_subs = [{"start": s["start"], "end": s["end"],
+                 "confidence": s["confidence"] if "confidence" in s else 0,
+                 "who": s["who"] if "who" in s else 0,
                  "text": balance(s["text"], 40)} for s in new_segments]
 
     new_subs = fix_overlap(new_subs)
 
-    if dst.endswith(".json"):
+    if fileformat == "both":
+        base = os.path.splitext(dst)[0]
+        print("  Writing both vtt and json")
+        write_vtt(new_subs, base + ".vtt")
+        with open(base + "_speakers.json", "w") as f:
+            json.dump(new_subs, f, indent=" ")
+
+        dst = base + "_speakers.json"
+
+    elif fileformat == "json":
 
         # new_subs has text as a list of lines, this should be newline separated text
         for sub in new_subs:
@@ -521,14 +535,12 @@ def process_task(cc, task):
         print("  Writing vtt", dst)
         write_vtt(new_subs, dst)
 
-    with open("/tmp/debug.json", "w") as f:
-        json.dump(new_subs, f, indent=" ")
+    # with open("/tmp/debug.json", "w") as f:
+    #    json.dump(new_subs, f, indent=" ")
 
     return 100, {"dst": dst}
-
 
 
 if __name__ == "__main__":
     import sys
     process_task(None, {"args": {"src": sys.argv[1], "dst": sys.argv[2]}})
-

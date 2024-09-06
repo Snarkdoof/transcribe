@@ -61,17 +61,23 @@ def process_task(cc, task):
     tmpdir = args.get("tmpdir", "/tmp")
     cache_dir = args.get("cache_dir", tmpdir)
     model = args.get("model", None)
+ 
     if not model:
-        model = "/scratch/models/scream_non_large_3e60_beams5_v2.bin"
+        model = "NbAiLab/nb-whisper-large"
 
     if not os.path.exists(tmpdir):
         os.makedirs(tmpdir)
 
-    if args.get("src", "") == "":
+    if not args.get("src", "") and args.get("contentid", "").startswith("http"):
+        # We got a url as an ID, which is a bit strange, but we can handle it
+        args["src"] = args["contentid"]
+        args["contentid"] = os.path.basename(args["contentid"])
+
+    if not args.get("src", ""):
         # We only have a content ID, we need to download it from STREAM
-        from stream_fetch import download
+        from stream_fetch import download as stream_download
         cc.log.info("Downloading from stream '%s'" % args["contentid"])
-        fn = download(args["contentid"], cache_dir, args["contentid"])
+        fn = stream_download(args["contentid"], cache_dir, args["contentid"])
         args["src"] = fn
 
     if args.get("item", None):
@@ -87,7 +93,7 @@ def process_task(cc, task):
             download(url, args["src"])
     else:
         cc.log.info("SRC '%s'" % str(args["src"]))
-        if args["src"].startswith("http") and not args["src"].count("m3u8") > 0:
+        if args.get("src", "").startswith("http") and not args["src"].count("m3u8") > 0:
             url = args["src"]
             args["src"] = os.path.join(tmpdir, os.path.basename(url))
             cc.log.info("Downloading '%s'" % args["src"])

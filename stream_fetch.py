@@ -1,9 +1,30 @@
 #!/usr/bin/env python3
 import requests
 import os
+import subprocess
+import tempfile
+import json
+import concurrent.futures
+
+queued = 0
+done = 0
 
 
-def download_and_concat_ts_files(baseurl, m3u8_url, output_filename="output"):
+def fetch_file(url):
+    global queued, done
+    queued += 1
+    response = requests.get(url)
+    if response.status_code != 200:
+        print(f"Failed to download {url}")
+
+    response.raise_for_status()  # Ensure successful request
+
+    done += 1
+    # print(url, queued, "/", done)
+    return response.content
+
+
+def download_and_concat_ts_files(baseurl, m3u8_url, output_filename="output", parallel=True):
     """
     Downloads an M3U8 playlist and concatenates all TS files with "master" in
     their URLs into a single file.
@@ -15,7 +36,6 @@ def download_and_concat_ts_files(baseurl, m3u8_url, output_filename="output"):
 
     # Download the M3U8 playlist
     response = requests.get(m3u8_url)
-    print("Downloading m3u8", m3u8_url)
     response.raise_for_status()  # Raise an exception if the download fails
     m3u8_content = response.text
 
@@ -40,6 +60,17 @@ def download_and_concat_ts_files(baseurl, m3u8_url, output_filename="output"):
         response.raise_for_status()
         with open(output_filename, "wb") as outfile:
             outfile.write(response.content)
+        return output_filename
+
+    if parallel:
+        print("Downloading", len(ts_urls), "files")
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(fetch_file, url) for url in ts_urls]
+            results = [future.result() for future in concurrent.futures.as_completed(futures)]
+
+        with open(output_filename, "wb") as outfile:
+            for result in results:
+                outfile.write(result)
         return output_filename
 
     # Concatenate TS files
@@ -114,6 +145,7 @@ def get_shittiest_quality(m3u8_content):
 
     return lowest_quality_url
 
+
 def get_best_quality(m3u8_content):
     """
     Parses an M3U8 playlist content and returns the URL of the best quality stream.
@@ -140,11 +172,57 @@ def get_best_quality(m3u8_content):
     return highest_quality_url
 
 
+def do_ffmpeg_magic(filename):
+    # Multiple steps.
+    # Find all the audio tracks using ffprobe
+    p = subprocess.check_output(["ffprobe", "-i", filename, "-show_entries",
+                                 "stream=index,codec_type", "-of", "json"])
+    info = json.loads(p)
+
+    audio_tracks = [x["index"] for x in info["streams"] if x["codec_type"] == "audio"]
+
+    print("Audio tracks", audio_tracks)
+    # If only one, return the filename with no further issues.
+    if len(audio_tracks) == 1:
+        return filename
+
+    # Extract the audio tracks to temporary files
+    tmp_dir = tempfile.mkdtemp()
+    tmp_files = []
+    for track in audio_tracks:
+        tmp_file = os.path.join(tmp_dir, f"audio_{track}.aac")
+        tmp_files.append(tmp_file)
+        cmd = ["ffmpeg", "-i", filename, "-map", f"0:{track}", "-c:a", "copy", tmp_file]
+        print(" ".join(cmd))
+        subprocess.run(cmd)
+
+    print("Got temp files", tmp_files)
+
+    # Concat the audio tracks using ffmpeg
+    destination = os.path.splitext(filename)[0] + ".aac"
+    # We need a temporary file with the list of files to concat
+    with open("audio_concat.txt", "w") as f:
+        for file in tmp_files:
+            f.write(f"file '{file}'\n")
+    subprocess.run(["ffmpeg", "-f", "concat", "-safe", "0", "-i", "audio_concat.txt",
+                    "-c", "copy", destination])
+
+    # Clean up
+    import shutil
+    shutil.rmtree(tmp_dir)
+
+    # Should remove the original file too
+    os.remove(filename)
+
+    # Return the new filename
+    return destination
+
+
 def download(content_id, directory, output_filename):
     meta = get_json_from_id(content_id)
     m3u8_url, master = download_m3u8_from_json(meta)
-    # playlist = get_shittiest_quality(master)
-    playlist = get_best_quality(master)
+    playlist = get_shittiest_quality(master)
+    # playlist = get_best_quality(master)
 
     # The "playlist, possibly with ../ in it, so we need to make it into a full
     # URL using the m3u8_url"
@@ -171,6 +249,12 @@ def download(content_id, directory, output_filename):
     try:
         dst = download_and_concat_ts_files(baseurl, playlist,
                                            output_filename=destination)
+
+        # Do fffmpeg stuff if we need to - some (all?) of the .ts files have two
+        # different audio tracks, one is the first seconds, the other is the
+        # rest. We should concat them really.
+        dst = do_ffmpeg_magic(dst)
+
         return dst
     except Exception:
         import traceback
@@ -182,6 +266,7 @@ def download(content_id, directory, output_filename):
 
 
 if __name__ == "__main__":
+
     import argparse
     parser = argparse.ArgumentParser(description="Download and concatenate TS "
                                      "files from an M3U8 playlist.")
