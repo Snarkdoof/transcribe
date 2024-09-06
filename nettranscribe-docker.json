@@ -1,0 +1,126 @@
+{
+  "workflow": {
+    "options": {
+      "port": {"help": "Port for server"},
+      "dir": {"help": "Project directory, default '.'", "default": "."},
+      "tmpdir": {"help": "Temporary directory", "default": "/tmp/"},
+      "archivedir": {"help": "Destination directory for archived copies"},
+      "model_dir": {"help": "Where to store models", "default": "/jojo/.cache"},
+      "hf_token": {"help": "Huggingface token for diarization"},
+      "new_speaker_cutoff": {"help": "Cutoff for new speaker", "default": 0.25},
+      "people_dir": {"help": "Directory for people files"},
+      "cache_dir": {"help": "Directory for cache files"},
+      "aws_access_key_id": {"help": "AWS access key"},
+      "aws_secret_access_key": {"help": "AWS secret key"}
+    },
+    "name": "Cryonite.NetTranscriber",
+    "description": "Transcribe and format texts for media files",
+    "config": "Cryonite.NetTranscriber",
+    "nodes": [
+      {
+        "module": "netwatcher",
+        "name": "start",
+        "args": {
+          "schema": "nettranscribe.schema",
+          "port": {"config": "port", "default": 9996}
+        },
+        "outputs": {
+          "src": "URL of media file",
+          "contentid": "ID of content",
+          "lang": "Language",
+          "reprocess": "Force reprocessing",
+          "model": "Model to use",
+          "people_dir": "Directory for existing speaker embeddings",
+          "speakers_dir": "Directory for new speaker embeddings",
+          "archive_url": "URL for archived copy"
+        },
+        "downstreamOf": ["entry"]
+      },
+      {
+        "module": "mod_prep_net",
+        "name": "prepare",
+        "downstreamOf": ["start"],
+        "workdir": {"option": "dir"},
+        "args": {
+          "src": {"output": "start.src"},
+          "model": {"output": "start.model"},
+          "contentid": {"output": "start.contentid"},
+          "dst": {"option": "archivedir"},
+          "tmpdir": {"option": "tmpdir", "type": "tempdir", "id": "jjp1oi123"},
+          "cache_dir": {"option": "cache_dir"}
+        }
+      },
+      {
+        "module": "ffmpeg",
+        "name": "extract_audio",
+        "downstreamOf": ["prepare"],
+        "args": {
+          "src": {"output": "parent.src"},
+          "dst": {"output": "parent.wavfile"},
+          "mono": true,
+          "audio_hz": 16000
+        }
+      },
+      {
+        "module": "mod_whisper",
+        "name": "transcribe",
+        "gpu": true,
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["extract_audio"],
+        "volumes": [["/home/cache/jojoturbo", "/jojo/.cache", "rw"],
+                    ["/home/cache/hf", "/jojo/hub", "rw"]],
+        "args": {
+          "use_api": false,
+          "src": {"output": "parent.dst"},
+          "lang": {"output": "start.lang"},
+          "model": {"output": "prepare.model"},
+          "dir": {"output": "prepare.dst"},
+          "reprocess": {"output": "start.reprocess"},
+          "model_dir": {"option": "model_dir"},
+          "hf_token": {"option": "hf_token"}
+        }
+      },
+      {
+        "module": "mod_speaker_identification_schiblib",
+        "name": "speaker_identify",
+        "gpu": true,
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["transcribe"],
+        "args": {
+          "src": {"output": "extract_audio.dst"},
+          "dst": {"output": "prepare.dst"},
+          "basename": {"output": "prepare.basename"},
+          "segments": {"output": "transcribe.dst_words"},
+          "people_dir": {"output": "start.people_dir"},
+          "cutoff": {"option": "new_speaker_cutoff"}
+        }
+      },
+      {
+        "module": "mod_reformat2",
+        "name": "reformat",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["speaker_identify"],
+        "args": {
+          "src": {"output": "parent.dst"},
+          "dst": {"output": "prepare.dst"},
+          "max_chars_per_line": 45
+        }
+      },
+      {
+        "module": "mod_archive",
+        "name": "archive",
+        "workdir": {"option": "dir"},
+        "downstreamOf": ["reformat"],
+        "args": {
+          "subs": {"output": "speaker_identify.dst"},
+          "cast": {"output": "speaker_identify.cast"},
+          "vtt": {"output": "reformat.dst"},
+          "dst": {"output": "start.archive_url"},
+          "contentid": {"output": "start.contentid"},
+          "aws_access_key_id": {"option": "aws_access_key_id"},
+          "aws_secret_access_key": {"option": "aws_secret_access_key"}
+        }
+      }
+    ]
+  }
+}
