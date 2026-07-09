@@ -65,7 +65,7 @@ def fix_segment_start(segment):
         if w["end"] == w["start"]:
             print("word with no time", segment)
 
-    speed = [len(w["text"]) / (w["end"] - w["start"]) for w in segment["words"][1:-1] if w["end"] > w["start"]]
+    speed = [len(w["text"]) / max(1, (w["end"] - w["start"])) for w in segment["words"][1:]]
     if len(speed) == 0:
         return segment
 
@@ -79,13 +79,6 @@ def fix_segment_start(segment):
         segment["words"][0]["start"] = max(0, est_start)
         segment["start"] = max(0, est_start)
 
-    # We also check the END word, in the opposite direction
-    if len(segment["words"]) > 1:
-        last_word = segment["words"][-1]
-        est_end = last_word["start"] + (len(last_word["text"]) / avg_speed)
-        if last_word["end"] - est_end > 0.5:  # Too long word, shorten
-            segment["words"][-1]["end"] = est_end
-
     return segment
 
 
@@ -93,22 +86,23 @@ def merge_segments(segments):
     # We go through the segments and merge those that are next to each other and
     # doesn end with some sort of full stop
 
-    fullstops = r"[\.?!]"
+    fullstops = "[\.?!]"
 
     new_segments = []
 
     # First segment is tricky, often due to jingles
     #segments = fix_first_segment(segments)
+
     merge_segment = None
     for segment in segments:
 
-        if "text" not in segment or not segment["text"]:
+        if not "text" in segment or not segment["text"]:
             print("Not a text segment")
             continue
 
         if "words" not in segment:
             print("Weird segment!", segment)
-        segment = fix_segment_start(segment)
+        #segment = fix_segment_start(segment)
 
         # If the text segment is a list, concat them
         if isinstance(segment["text"], list):
@@ -140,8 +134,6 @@ def merge_segments(segments):
         merge_segment["text"] = re.sub(r'  ', r' ', merge_segment["text"])
 
     # print(len(segments), "converted to", len(new_segments))
-    print("NEW SEGMENTS", json.dumps(segments, indent=2))
-
     return new_segments
 
 def similar_word(word1, word2, threshold=80):
@@ -289,7 +281,7 @@ def split_segments(segments, max_chars, max_cps=20.0, max_time=7.0):
             if word["text"].startswith(" ") or len(words) == 0:
                 words.append({"text": word["text"].lstrip(),
                               "start": word["start"],
-                              "end": word["end"]})
+                              "end": word["start"]})
             else:
                 print(f'Length of words: {len(words)}')
                 words[-1]["text"] += word["text"]
@@ -352,7 +344,7 @@ def find_cutpoints(text, items="fullstop", maxlen=37):
     """
     Items can be "fullstop" for ".!?", pause for ",-:;" and "space" for whitespace
     """
-    r = {"fullstop": r"[\.\?\!] ", "pause": r"[,:;] ", "stops": r"[\.\?\!,:;] ", "space": r"[\W]", "punctuation": r"[\.?!,:;-]"}
+    r = {"fullstop": "[\.\?\!] ", "pause": "[,:;] ", "stops": "[\.\?\!,:;] ", "space": "[\W]", "punctuation": "[\.?!,:;-]"}
 
     if items not in r:
         raise Exception("Bad cutpoint '%s'" % items)
@@ -501,12 +493,12 @@ def process_task(cc, task):
     if basename:
         dst = os.path.join(dst_dir, basename + ".{}".format(fileformat))
 
-    # cc.log.debug("Destination directory '%s'" % dst_dir)
+    cc.log.debug("Destination directory '%s'" % dst_dir)
     if not os.path.exists(dst_dir):
         os.makedirs(dst_dir)
 
     max_chars = int(args.get("max_chars_per_line", 40))
-    max_time = float(args.get("max_time_pr_sub", 6.0))
+    max_time = float(args.get("max_time_pr_sub",6.0))
 
     print("Processing", src)
     with open(src, "r") as f:
@@ -522,7 +514,7 @@ def process_task(cc, task):
     new_segments = merge_segments(subs)
 
     # Split splits for maximum length, we don't want two full, long lines if possible
-    new_segments = split_segments(new_segments, math.floor(max_chars * 1.2), max_time=max_time)
+    new_segments = split_segments(new_segments, math.floor(max_chars * 1.5), max_time=max_time)
 
     new_subs = [{"start": s["start"], "end": s["end"], 
                  "text": balance(s["text"], 40)} for s in new_segments]
@@ -546,6 +538,7 @@ def process_task(cc, task):
         json.dump(new_subs, f, indent=" ")
 
     return 100, {"dst": dst}
+
 
 
 if __name__ == "__main__":
