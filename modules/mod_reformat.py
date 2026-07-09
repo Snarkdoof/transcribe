@@ -141,11 +141,24 @@ def trim(s):
     # Remove additional spaces, also spaces in front of punctuation
     import re
 
+    if not s:
+        return s
+
+    # 1. Replace '%' with ' prosent', ensuring a space before it
+    s = re.sub(r'(\S)\s*%', r'\1 prosent', s)
+    s = re.sub(r'%', 'prosent', s)
+
+    # 2. Normalize ellipses ('...' or '…') to have exactly one space before them
+    s = re.sub(r'\.{3,}', '…', s)
+    s = re.sub(r'(\S)\s*…', r'\1 …', s)
+
+    # 3. Remove spaces in front of other punctuation characters, except the ellipse
     while True:
-        m = re.search("(\s[\W\s])", s)
+        m = re.search(r"(\s[^\w\s\u2026])", s)
         if not m:
             break
         s = s[:m.span()[0]] + s[m.span()[0] + 1:]
+
     return s.strip()
 
 
