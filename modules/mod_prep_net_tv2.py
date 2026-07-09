@@ -13,7 +13,7 @@ ccmodule = {
         "contentid": "The ID of the item",
         "item": "Item map containing keys 'id', 'url' and 'processed'",
         "baseurl": "Base URL for final files",
-        "model": "Model to use (Default SCREAM)"
+        "model": "Model to use (Default nb-whisper-large)"
     },
     "outputs": {
         "src": "Source file (might be downloaded)",
