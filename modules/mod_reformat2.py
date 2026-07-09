@@ -493,7 +493,8 @@ def process_task(cc, task):
     if basename:
         dst = os.path.join(dst_dir, basename + ".{}".format(fileformat))
 
-    cc.log.debug("Destination directory '%s'" % dst_dir)
+    if cc:
+        cc.log.debug("Destination directory '%s'" % dst_dir)
     if not os.path.exists(dst_dir):
         os.makedirs(dst_dir)
 
